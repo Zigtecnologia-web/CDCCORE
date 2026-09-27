@@ -195,6 +195,77 @@ go run .
 
 Use `Ctrl+C` para encerrar de forma segura.
 
+## Build dos binários
+
+Para gerar os executáveis de todas as plataformas suportadas, tenha a versão de Go definida em `consumer/go.mod` instalada e execute, na raiz do projeto:
+
+```bash
+./scripts/build.sh
+```
+
+O script recria `dist/` e gera os seguintes artefatos com `CGO_ENABLED=0`:
+
+```text
+dist/
+|-- cdc-postgres-linux-amd64
+|-- cdc-postgres-linux-arm64
+|-- cdc-postgres-darwin-amd64
+`-- cdc-postgres-darwin-arm64
+```
+
+Use o binário correspondente ao sistema operacional e à arquitetura da máquina. Por exemplo, em um Mac com Apple Silicon, o arquivo pode ser executado usando o `.env` existente em `consumer/`:
+
+```bash
+cd consumer
+../dist/cdc-postgres-darwin-arm64
+```
+
+### Configuração do binário no servidor
+
+Ao iniciar, o binário tenta carregar um arquivo chamado `.env` do diretório atual de execução. Esse diretório não precisa ser o mesmo em que o executável está armazenado, mas manter os dois juntos costuma ser a opção mais simples:
+
+```text
+/opt/cdc-postgres/
+|-- cdc-postgres-linux-amd64
+`-- .env
+```
+
+Nesse exemplo, execute:
+
+```bash
+cd /opt/cdc-postgres
+./cdc-postgres-linux-amd64
+```
+
+Se o comando for iniciado em outro diretório, o programa procurará o `.env` nesse outro diretório. Por exemplo, executar `/opt/cdc-postgres/cdc-postgres-linux-amd64` a partir de `/tmp` fará o programa procurar `/tmp/.env`.
+
+O `.env` é opcional. Todas as configurações também podem ser fornecidas diretamente como variáveis de ambiente:
+
+```bash
+CDC_SOURCE_PGHOST=db.exemplo.com \
+CDC_SOURCE_PGUSER=cdc \
+CDC_SOURCE_PGPASSWORD='senha' \
+./cdc-postgres-linux-amd64
+```
+
+Variáveis já definidas no ambiente têm prioridade sobre valores presentes no `.env`. Em produção, elas podem ser fornecidas pelo mecanismo utilizado para iniciar o processo, como `EnvironmentFile` do `systemd`, secrets do Docker ou Secrets do Kubernetes.
+
+O arquivo com credenciais deve pertencer ao usuário que executa o CDC e ter acesso restrito:
+
+```bash
+chmod 600 /opt/cdc-postgres/.env
+```
+
+O servidor de destino não precisa ter Go nem o código-fonte instalados. O `.env` não é incorporado ao executável, e os binários não incluem host, porta, usuário, senha, replication slot, publication ou banco de dados. O mesmo binário pode ser utilizado em desenvolvimento, homologação e produção; somente a configuração externa muda entre os ambientes.
+
+Para conferir localmente o formato e a arquitetura dos artefatos:
+
+```bash
+file dist/cdc-postgres-*
+```
+
+O diretório `dist/` é ignorado pelo Git; os binários gerados não devem ser commitados no repositório.
+
 ## Testes
 
 Os testes de integração usam o replication slot real. Como um slot só pode ter um consumidor ativo, pare o consumidor do Compose antes de executar a suíte:
@@ -218,9 +289,10 @@ docker compose up -d consumer
 .
 |-- assets/                 # Logo e recursos visuais
 |-- consumer/               # Aplicação Go, sinks e testes
+|-- dist/                   # Binários gerados localmente (ignorado pelo Git)
 |-- docs/                   # Estado e documentação técnica
 |-- postgres/init/          # Banco e tabelas do ambiente local
-|-- scripts/                # Criacao do slot e teste manual
+|-- scripts/                # Build, criação do slot e teste manual
 |-- docker-compose.yml      # Ambiente local completo
 `-- README.md
 ```

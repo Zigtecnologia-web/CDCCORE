@@ -4,3 +4,4 @@ postgres-data/
 *.log
 consumer/consumer
 consumer/cdc.txt
+/dist/
