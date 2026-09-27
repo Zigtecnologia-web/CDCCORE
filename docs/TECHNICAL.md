@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="../assets/cdccore-logo.png" alt="CDCCore" width="720">
+  <img src="../assets/cdccore-logo-v2.png" alt="CDCCore" width="640">
 </p>
 
 <p align="center"><strong>Consumer and Replicator for Change Data Capture</strong></p>
@@ -13,7 +13,8 @@ Os sinks atuais sao `FileSink`, que adiciona eventos em JSON Lines ao arquivo `c
 ```text
 cdc-postgres/
 ├── assets/
-│   └── cdccore-logo.png
+│   ├── cdccore-logo.png
+│   └── cdccore-logo-v2.png
 ├── consumer/
 │   ├── go.mod
 │   ├── go.sum

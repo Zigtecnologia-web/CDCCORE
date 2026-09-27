@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/cdccore-logo.png" alt="Logo do CDCCore" width="720">
+  <img src="assets/cdccore-logo-v2.png" alt="Logo do CDCCore" width="640">
 </p>
 
 <p align="center"><strong>Consumer and Replicator for Change Data Capture</strong></p>
