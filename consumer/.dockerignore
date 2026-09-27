@@ -1,0 +1,5 @@
+.env
+cdc.txt
+consumer
+*.test
+coverage.out

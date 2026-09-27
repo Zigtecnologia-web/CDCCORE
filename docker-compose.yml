@@ -1,0 +1,127 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: cdc-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres-target:
+    image: postgres:17
+    container_name: cdc-postgres-target
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_target_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  create-slot:
+    image: postgres:17
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: postgres
+    command:
+      - "sh"
+      - "-c"
+      - |
+        psql -v ON_ERROR_STOP=1 -h postgres -U postgres -d cdc_demo <<'SQL'
+        DO $$do$$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_publication
+                WHERE pubname = 'cdc_publication'
+            ) THEN
+                CREATE PUBLICATION cdc_publication
+                FOR TABLE public.clientes, public.enderecos;
+            ELSIF NOT EXISTS (
+                SELECT 1
+                FROM pg_publication_tables
+                WHERE pubname = 'cdc_publication'
+                  AND schemaname = 'public'
+                  AND tablename = 'enderecos'
+            ) THEN
+                ALTER PUBLICATION cdc_publication
+                ADD TABLE public.enderecos;
+            END IF;
+        END
+        $$do$$;
+
+        SELECT
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM pg_replication_slots
+                    WHERE slot_name = 'cdc_slot'
+                )
+                THEN 'slot already exists: cdc_slot'
+                ELSE (
+                    SELECT 'created slot: ' || slot_name || ' using plugin: pgoutput'
+                    FROM pg_create_logical_replication_slot('cdc_slot', 'pgoutput')
+                )
+            END AS result;
+        SQL
+
+  consumer:
+    build:
+      context: ./consumer
+    container_name: cdc-consumer
+    depends_on:
+      create-slot:
+        condition: service_completed_successfully
+      postgres-target:
+        condition: service_healthy
+    restart: unless-stopped
+    env_file:
+      - ./consumer/.env
+    environment:
+      CDC_SOURCE_PGHOST: postgres
+      CDC_SOURCE_PGPORT: 5432
+      CDC_SOURCE_ID: cdc-demo
+      CDC_SLOT: cdc_slot
+      CDC_PUBLICATION: cdc_publication
+      CDC_SINK: postgres
+      CDC_DEST_PGHOST: postgres-target
+      CDC_DEST_PGPORT: 5432
+      CDC_STATUS_INTERVAL: 10s
+      CDC_RETRY_INITIAL_DELAY: 1s
+      CDC_RETRY_MAX_DELAY: 30s
+      CDC_RETRY_MAX_ATTEMPTS: 0
+      CDC_HEALTH_ADDR: ":8080"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/readyz >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
+volumes:
+  postgres_data:
+  postgres_target_data:
