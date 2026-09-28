@@ -408,7 +408,7 @@ CDC_HEALTH_ENABLED=true
 CDC_HEALTH_ADDR=:8080
 ```
 
-Os valores acima sao os padroes. `CDC_PUBLICATION` informa a publication usada pelo `pgoutput`, `CDC_OUTPUT_FILE` permite que cada execucao use um arquivo isolado, e `CDC_STATUS_INTERVAL` controla a frequencia de confirmacao do progresso ao PostgreSQL. `CDC_RETRY_MAX_ATTEMPTS=0` significa retry infinito.
+Os valores acima sao os padroes. `CDC_PUBLICATION` informa a publication usada pelo `pgoutput`, `CDC_OUTPUT_FILE` permite que cada execucao use um arquivo isolado, e `CDC_STATUS_INTERVAL` controla a frequencia de confirmacao do progresso ao PostgreSQL. `CDC_RETRY_MAX_ATTEMPTS=0` significa retry infinito. O servidor de monitoramento pertence ao proprio binario: `CDC_HEALTH_ENABLED=false` o desabilita e `CDC_HEALTH_ADDR` escolhe o endereco e a porta de escuta. Use, por exemplo, `127.0.0.1:9090` para aceitar consultas somente no servidor pela porta `9090`, ou `:9090` para escutar em todas as interfaces. Os endpoints e as metricas estao descritos na secao Monitoramento do README.
 
 O programa valida a configuracao na inicializacao e evita imprimir senhas ou DSNs completos em logs.
 

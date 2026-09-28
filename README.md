@@ -155,17 +155,57 @@ Consulta as colunas e a chave primária no destino e monta os comandos SQL autom
 
 ## Monitoramento
 
-Com o ambiente Docker ativo, estão disponíveis:
+O servidor HTTP de monitoramento faz parte do próprio consumidor e funciona tanto no Docker quanto ao executar somente o binário. Ele é habilitado por padrão na porta `8080` e pode ser configurado no `.env`:
 
-- `http://localhost:8080/livez`: informa se o processo está vivo;
-- `http://localhost:8080/readyz`: informa se o consumidor está pronto;
-- `http://localhost:8080/metrics`: apresenta contadores e os últimos LSNs em JSON.
+```dotenv
+CDC_HEALTH_ENABLED=true
+CDC_HEALTH_ADDR=:8080
+```
 
-Para acompanhar os logs:
+Use `CDC_HEALTH_ENABLED=false` para desabilitá-lo. Para escolher outra porta, por exemplo `9090`, use `CDC_HEALTH_ADDR=:9090`.
+
+O endereço também controla de onde o servidor aceita conexões:
+
+- `:8080` ou `0.0.0.0:8080`: aceita conexões em todas as interfaces da máquina;
+- `127.0.0.1:8080`: aceita apenas conexões originadas no próprio servidor.
+
+Com a configuração padrão, os endpoints são:
+
+- `GET http://localhost:8080/livez`: retorna HTTP `200` e `ok` enquanto o servidor de monitoramento estiver ativo. Não verifica as conexões com os bancos;
+- `GET http://localhost:8080/readyz`: retorna HTTP `200` e `ready` quando o consumidor validou o slot, abriu o sink e iniciou a replicação. Durante uma falha ou reconexão, retorna HTTP `503` com a última mensagem de erro;
+- `GET http://localhost:8080/metrics`: retorna em JSON os contadores internos e os últimos LSNs.
+
+Consulte os endpoints diretamente no servidor:
 
 ```bash
+curl http://localhost:8080/livez
+curl http://localhost:8080/readyz
+curl http://localhost:8080/metrics
+```
+
+As métricas disponíveis são:
+
+- `events_received`: alterações recebidas da origem;
+- `events_applied`: alterações aplicadas com sucesso no destino;
+- `transactions_received`: transações recebidas da origem;
+- `transactions_committed`: transações confirmadas no destino;
+- `transactions_failed`: transações que falharam;
+- `transactions_redelivered`: contador reservado para reentregas; na implementação atual, ainda não é incrementado;
+- `reconnects`: tentativas de reconexão realizadas;
+- `sink_errors`: erros ao gravar no destino;
+- `last_processed_lsn`: última posição do WAL aplicada com sucesso no sink;
+- `last_confirmed_lsn`: última posição aplicada que já foi confirmada ao PostgreSQL de origem.
+
+O `last_processed_lsn` pode ficar brevemente à frente do `last_confirmed_lsn` até o envio do próximo ACK. Uma diferença persistente, especialmente acompanhada de `reconnects` ou `sink_errors`, indica que a confirmação de progresso deve ser investigada.
+
+No Docker Compose, o `/readyz` é usado como healthcheck do container. Para consultar o estado e acompanhar os logs:
+
+```bash
+docker compose ps
 docker compose logs -f consumer
 ```
+
+Os endpoints não possuem autenticação. Em produção, restrinja o endereço a `127.0.0.1`, proteja a porta com firewall ou publique-a por meio de um proxy autenticado. Se a porta configurada já estiver em uso, o consumidor registra `health_server_failed`; a replicação pode continuar, mas os endpoints ficam indisponíveis.
 
 ## Garantias importantes
 
