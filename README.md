@@ -137,6 +137,22 @@ CDC_PUBLICATION_AUTOCONFIGURE=true
 
 No modo `generic`, as tabelas precisam existir no destino e possuir chave primária. O CDCCore replica os dados, mas não cria nem atualiza o schema das tabelas.
 
+Schema Evolution inicia em modo seguro:
+
+```dotenv
+CDC_SCHEMA_EVOLUTION=disabled
+```
+
+Quando o `pgoutput` enviar uma nova descricao de uma relacao ja conhecida e a metadata observada tiver mudado, o CDCCore registra `schema_metadata_change_observed`, sem alterar o contrato JSON de `INSERT`, `UPDATE` e `DELETE`. As classificacoes descrevem somente a diferenca entre snapshots: `COLUMN_ADDED`, `COLUMN_REMOVED`, `COLUMN_METADATA_CHANGED`, `RELATION_ID_CHANGED` e `RELATION_RENAMED_OR_REPLACED`. Evidencia insuficiente, como um possivel rename de coluna, resulta em `UNKNOWN`; o sistema nao afirma ter recebido o DDL original.
+
+Valores suportados:
+
+- `disabled`: detecta, valida quando houver PostgreSQL destination, mas nao aplica DDL;
+- `manual`: reserva a mudanca para autorizacao externa futura e nao aplica DDL automaticamente;
+- `auto`: aplica automaticamente apenas operacoes permitidas pela politica inicial.
+
+Na politica inicial, `auto` exige `CDC_POSTGRES_APPLY_MODE=generic` e permite somente aplicar `ADD COLUMN` nullable em tabelas ja aceitas pelo PostgreSQL Sink. A acao no destination e derivada de metadata validada, usa uma allowlist por OID/typmod e identificadores escapados; SQL recebido da origem nunca e executado diretamente. `DROP COLUMN`, `DROP TABLE`, `ALTER TYPE`, rename, mudanca de chave primaria, tipos desconhecidos e colunas `NOT NULL` permanecem bloqueados. O apply, o DML e o registro de idempotencia participam da mesma transacao no destination.
+
 Depois de alterar o `.env`, recrie o consumidor:
 
 ```bash
@@ -173,7 +189,8 @@ Com a configuração padrão, os endpoints são:
 
 - `GET http://localhost:8080/livez`: retorna HTTP `200` e `ok` enquanto o servidor de monitoramento estiver ativo. Não verifica as conexões com os bancos;
 - `GET http://localhost:8080/readyz`: retorna HTTP `200` e `ready` quando o consumidor validou o slot, abriu o sink e iniciou a replicação. Durante uma falha ou reconexão, retorna HTTP `503` com a última mensagem de erro;
-- `GET http://localhost:8080/metrics`: retorna em JSON os contadores internos e os últimos LSNs.
+- `GET http://localhost:8080/metrics`: retorna em JSON os contadores internos e os últimos LSNs;
+- `GET http://localhost:8080/metrics/prometheus`: retorna os contadores internos no formato de exposition do Prometheus.
 
 Consulte os endpoints diretamente no servidor:
 
@@ -181,6 +198,7 @@ Consulte os endpoints diretamente no servidor:
 curl http://localhost:8080/livez
 curl http://localhost:8080/readyz
 curl http://localhost:8080/metrics
+curl http://localhost:8080/metrics/prometheus
 ```
 
 As métricas disponíveis são:
@@ -193,8 +211,18 @@ As métricas disponíveis são:
 - `transactions_redelivered`: contador reservado para reentregas; na implementação atual, ainda não é incrementado;
 - `reconnects`: tentativas de reconexão realizadas;
 - `sink_errors`: erros ao gravar no destino;
+- `cdc_schema_metadata_relation_messages_total`: mensagens de relacao observadas;
+- `cdc_schema_metadata_changes_total`: diferencas de metadata observadas;
+- `cdc_schema_metadata_unknown_total`: diferencas classificadas como `UNKNOWN`;
+- `cdc_schema_apply_attempts_total`: decisoes de apply avaliadas pelo PostgreSQL Sink;
+- `cdc_schema_apply_success_total`: applies confirmados ou colunas compativeis reconhecidas apos commit;
+- `cdc_schema_apply_failure_total`: falhas durante apply ou revalidacao;
+- `cdc_schema_apply_rejected_total`: operacoes bloqueadas por modo ou politica;
+- `cdc_schema_validation_total`: totais de validacao por status de compatibilidade;
 - `last_processed_lsn`: última posição do WAL aplicada com sucesso no sink;
 - `last_confirmed_lsn`: última posição aplicada que já foi confirmada ao PostgreSQL de origem.
+
+O endpoint `/metrics/prometheus` expõe as métricas numéricas com prefixo `cdc_`, tipo `counter` e `Content-Type: text/plain; version=0.0.4`, incluindo `cdc_events_total`, `cdc_transactions_total`, `cdc_schema_metadata_relation_messages_total`, `cdc_schema_metadata_changes_total`, `cdc_schema_metadata_unknown_total`, `cdc_schema_apply_attempts_total`, `cdc_schema_apply_success_total`, `cdc_schema_apply_failure_total`, `cdc_schema_apply_rejected_total` e `cdc_schema_validation_total`.
 
 O `last_processed_lsn` pode ficar brevemente à frente do `last_confirmed_lsn` até o envio do próximo ACK. Uma diferença persistente, especialmente acompanhada de `reconnects` ou `sink_errors`, indica que a confirmação de progresso deve ser investigada.
 
@@ -371,6 +399,13 @@ docker compose ps
 - Ainda não existem limites internos de memória, eventos ou bytes por transação.
 - O streaming de transações grandes com `pgoutput` v2 ainda não foi implementado.
 - O File Sink não oferece a mesma idempotência transacional do PostgreSQL Sink.
+
+Benchmark opt-in de memória para 1.000, 25.000 e 100.000 eventos:
+
+```bash
+cd consumer
+CDC_MEASURE_LARGE_TX=1 go test -run TestLargeTransactionMemoryBaseline -v
+```
 
 Para detalhes sobre protocolo, LSN, recuperação, segurança, transações grandes e decisões de implementação, consulte a [documentação técnica](docs/TECHNICAL.md) e o [estado do projeto](docs/STATUS.md).
 

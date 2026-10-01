@@ -23,12 +23,19 @@ import (
 )
 
 const (
-	testSlotName = "cdc_slot"
-	testTimeout  = 30 * time.Second
-	pollInterval = 25 * time.Millisecond
+	defaultTestSlotName = "cdc_slot"
+	testTimeout         = 30 * time.Second
+	pollInterval        = 25 * time.Millisecond
 )
 
 var consumerBinaryPath string
+
+func testSlotName() string {
+	if name := os.Getenv("CDC_TEST_SLOT"); name != "" {
+		return name
+	}
+	return defaultTestSlotName
+}
 
 func TestMain(m *testing.M) {
 	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -153,7 +160,7 @@ func TestCDCEventOrder(t *testing.T) {
 	for index, name := range names {
 		execSQL(t, db, "INSERT INTO clientes (nome, email) VALUES ($1, $2)", name, emails[index])
 		waitFileContains(t, outputFile, name)
-		waitForAcknowledgement(t, db, eventLSN(t, outputFile, name))
+		waitForAcknowledgementAdvance(t, db, confirmed)
 		nextConfirmed := readSlot(t, db).confirmedLSN
 		if nextConfirmed <= confirmed {
 			t.Fatalf("LSN confirmado nao avancou apos %q: antes=%s depois=%s", name, confirmed, nextConfirmed)
@@ -277,8 +284,10 @@ func TestCDCRealTransactionPreservesProtocolOrder(t *testing.T) {
 			t.Fatalf("evento fora da transacao %d: %+v", xid, event)
 		}
 	}
-	if matching[0].LSN != matching[1].LSN || matching[1].LSN != matching[2].LSN {
-		t.Fatalf("eventos da mesma transacao receberam LSNs diferentes: %+v", matching)
+	for index, event := range matching {
+		if _, err := pglogrepl.ParseLSN(event.LSN); err != nil {
+			t.Fatalf("evento %d recebeu LSN invalido %q: %v", index, event.LSN, err)
+		}
 	}
 
 	waitForAcknowledgement(t, db, eventLSN(t, outputFile, email))
@@ -364,7 +373,7 @@ func TestCDCStructuredInsertUpdateDelete(t *testing.T) {
 	execSQL(t, db, "DELETE FROM clientes WHERE email = $1", email)
 	waitUntil(t, testTimeout, "DELETE estruturado", func() (bool, error) {
 		for _, event := range readEventsIfExists(t, outputFile) {
-			if event.Type == eventDelete && event.OldData["email"] == email {
+			if event.Type == eventDelete && event.Data["email"] == email {
 				return true, nil
 			}
 		}
@@ -372,12 +381,150 @@ func TestCDCStructuredInsertUpdateDelete(t *testing.T) {
 	})
 	deleteEvent := waitForEvent(t, outputFile, email, eventDelete)
 	assertCommonEvent(t, deleteEvent)
-	if deleteEvent.OldData["nome"] != updatedName {
-		t.Fatalf("DELETE sem old_data esperado: %+v", deleteEvent)
+	if deleteEvent.Data["nome"] != updatedName {
+		t.Fatalf("DELETE sem data esperado: %+v", deleteEvent)
+	}
+	if deleteEvent.OldData != nil {
+		t.Fatalf("DELETE nao deve possuir old_data: %+v", deleteEvent)
 	}
 
 	waitForAcknowledgement(t, db, eventLSN(t, outputFile, email))
 	consumer.stop(t, db, false)
+}
+
+func TestCDCSchemaChangeDetectOnly(t *testing.T) {
+	source := openTestDatabase(t)
+	destination := openDestinationDatabase(t)
+	assertDistinctDatabases(t, source, destination)
+
+	suffix := strconv.FormatInt(time.Now().UnixNano(), 36)
+	table := "cdc_spec15_" + suffix
+	publication := "cdc_spec15_pub_" + suffix
+	slot := "cdc_spec15_slot_" + suffix
+	column := "telefone"
+	tableSQL := pgx.Identifier{"public", table}.Sanitize()
+	publicationSQL := pgx.Identifier{publication}.Sanitize()
+	columnSQL := pgx.Identifier{column}.Sanitize()
+
+	execSQL(t, source, "CREATE TABLE "+tableSQL+" (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, nome TEXT NOT NULL)")
+	execSQL(t, source, "ALTER TABLE "+tableSQL+" REPLICA IDENTITY FULL")
+	execSQL(t, destination, "CREATE TABLE "+tableSQL+" (id BIGINT PRIMARY KEY, nome TEXT NOT NULL)")
+	execSQL(t, source, "CREATE PUBLICATION "+publicationSQL+" FOR TABLE "+tableSQL)
+	var createdSlot string
+	if err := source.QueryRow(context.Background(), "SELECT slot_name FROM pg_create_logical_replication_slot($1, 'pgoutput')", slot).Scan(&createdSlot); err != nil {
+		t.Fatalf("criar slot isolado da SPEC 15: %v", err)
+	}
+	if createdSlot != slot {
+		t.Fatalf("slot criado com nome inesperado: esperado=%s atual=%s", slot, createdSlot)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, _ = source.Exec(ctx, "SELECT pg_drop_replication_slot($1) WHERE EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = $1)", slot)
+		_, _ = source.Exec(ctx, "DROP PUBLICATION IF EXISTS "+publicationSQL)
+		_, _ = source.Exec(ctx, "DROP TABLE IF EXISTS "+tableSQL)
+		_, _ = destination.Exec(ctx, "DROP TABLE IF EXISTS "+tableSQL)
+	})
+
+	if columnExists(t, destination, "public", table, column) {
+		t.Fatalf("coluna de teste %s ja existe no destination", column)
+	}
+
+	baselineName, _ := testIdentity("CDC_SPEC15_BASELINE")
+	changedName, _ := testIdentity("CDC_SPEC15_CHANGED")
+	phoneValue := fmt.Sprintf("phone_%d", time.Now().UnixNano())
+
+	outputFile := filepath.Join(t.TempDir(), "schema-change.jsonl")
+	consumer := startConsumerWithSlot(t, source, slot, outputFile, map[string]string{
+		"CDC_PUBLICATION":               publication,
+		"CDC_PUBLICATION_AUTOCONFIGURE": "false",
+		"CDC_TEST_PAUSE_BEFORE_ACK":     "true",
+		"CDC_TEST_PAUSE_MATCH":          phoneValue,
+	})
+
+	execSQL(t, source, "INSERT INTO "+tableSQL+" (nome) VALUES ($1)", baselineName)
+	waitFileContains(t, outputFile, baselineName)
+	confirmedBeforeChange := readSlotNamed(t, source, slot).confirmedLSN
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	tx, err := source.Begin(ctx)
+	if err != nil {
+		t.Fatalf("iniciar transacao com DDL e DML: %v", err)
+	}
+	defer tx.Rollback(context.Background())
+	var xid uint64
+	if err := tx.QueryRow(ctx, "SELECT txid_current()").Scan(&xid); err != nil {
+		t.Fatalf("consultar xid da transacao com schema change: %v", err)
+	}
+	if _, err := tx.Exec(ctx, "ALTER TABLE "+tableSQL+" ADD COLUMN "+columnSQL+" TEXT"); err != nil {
+		t.Fatalf("adicionar coluna no source: %v", err)
+	}
+	insertSQL := "INSERT INTO " + tableSQL + " (nome, " + columnSQL + ") VALUES ($1, $2)"
+	if _, err := tx.Exec(ctx, insertSQL, changedName, phoneValue); err != nil {
+		t.Fatalf("inserir DML apos schema change: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit da transacao com DDL e DML: %v", err)
+	}
+
+	waitFileContains(t, outputFile, phoneValue)
+	waitConsumerOutput(t, consumer, "event=schema_metadata_change_observed")
+	waitConsumerOutput(t, consumer, "classification=COLUMN_ADDED")
+	waitConsumerOutput(t, consumer, "schema=public table="+table)
+	waitConsumerOutput(t, consumer, fmt.Sprintf("transaction_id=%d", uint32(xid)))
+	waitConsumerOutput(t, consumer, "column="+column)
+	waitConsumerOutput(t, consumer, testPauseLogMessage)
+
+	event := waitForEvent(t, outputFile, phoneValue, eventInsert)
+	if event.TransactionID != uint32(xid) || event.Data[column] != phoneValue {
+		t.Fatalf("DML posterior ao schema change perdeu contexto: %+v", event)
+	}
+	logLSN := schemaChangeLogLSN(t, consumer.output.String(), column)
+	if logLSN == 0 {
+		t.Fatal("schema change foi registrado sem LSN")
+	}
+	output := consumer.output.String()
+	beginIndex := strings.Index(output, fmt.Sprintf("BEGIN xid=%d", uint32(xid)))
+	schemaIndex := strings.Index(output, "event=schema_metadata_change_observed")
+	commitIndex := strings.Index(output, fmt.Sprintf("xid=%d commit_lsn=", uint32(xid)))
+	if beginIndex < 0 || schemaIndex < beginIndex || commitIndex < schemaIndex {
+		t.Fatalf("fronteira BEGIN -> schema metadata -> COMMIT nao preservada:\n%s", output)
+	}
+
+	if duringPause := readSlotNamed(t, source, slot).confirmedLSN; duringPause != confirmedBeforeChange {
+		t.Fatalf("schema detection/DML confirmou LSN antes do sink concluir ACK: antes=%s durante=%s", confirmedBeforeChange, duringPause)
+	}
+	if columnExists(t, destination, "public", table, column) {
+		t.Fatalf("CDCCore aplicou DDL automaticamente no destination: coluna=%s", column)
+	}
+
+	consumer.stop(t, source, true)
+	confirmedAfterCrash := readSlotNamed(t, source, slot).confirmedLSN
+	if confirmedAfterCrash != confirmedBeforeChange {
+		t.Fatalf("crash antes do ACK alterou confirmed LSN: antes=%s depois=%s", confirmedBeforeChange, confirmedAfterCrash)
+	}
+
+	recoveryFile := filepath.Join(t.TempDir(), "schema-change-recovery.jsonl")
+	restarted := startConsumerWithSlot(t, source, slot, recoveryFile, map[string]string{
+		"CDC_PUBLICATION":               publication,
+		"CDC_PUBLICATION_AUTOCONFIGURE": "false",
+	})
+	waitFileContains(t, recoveryFile, phoneValue)
+	waitConsumerOutput(t, restarted, "event=schema_metadata_change_observed")
+	waitConsumerOutput(t, restarted, "classification=COLUMN_ADDED")
+	replayed := waitForEvent(t, recoveryFile, phoneValue, eventInsert)
+	waitForAcknowledgementNamed(t, source, slot, eventLSN(t, recoveryFile, phoneValue))
+	if replayed.TransactionID != uint32(xid) {
+		t.Fatalf("recovery perdeu transaction_id: esperado=%d evento=%+v", uint32(xid), replayed)
+	}
+	if confirmedAfterRecovery := readSlotNamed(t, source, slot).confirmedLSN; confirmedAfterRecovery < confirmedAfterCrash {
+		t.Fatalf("confirmed LSN regrediu no recovery: antes=%s depois=%s", confirmedAfterCrash, confirmedAfterRecovery)
+	}
+	if columnExists(t, destination, "public", table, column) {
+		t.Fatalf("recovery aplicou DDL automaticamente no destination: coluna=%s", column)
+	}
+	restarted.stop(t, source, false)
 }
 
 func TestCDCRollbackDoesNotPersistBusinessEvent(t *testing.T) {
@@ -477,10 +624,10 @@ func TestPostgreSQLSinkInsertUpdateDeleteAndIdempotency(t *testing.T) {
 		commitLSN:     pglogrepl.LSN(0x103),
 		transactionID: 3,
 		events: []event{{
-			Type:    eventDelete,
-			Schema:  "public",
-			Table:   "clientes",
-			OldData: map[string]any{"id": id, "nome": "Sink Update", "email": email},
+			Type:   eventDelete,
+			Schema: "public",
+			Table:  "clientes",
+			Data:   map[string]any{"id": id, "nome": "Sink Update", "email": email},
 		}},
 	}
 	if _, err := sink.ApplyTransaction(ctx, deleteTx); err != nil {
@@ -607,6 +754,288 @@ func TestDecoderPreservesEventOrder(t *testing.T) {
 			t.Fatalf("ordem inesperada no indice %d: esperado=%s atual=%s", index, want[index], got[index].Type)
 		}
 	}
+	if got[2].Data["nome"] != "Atualizado" || got[2].OldData != nil {
+		t.Fatalf("DELETE fora do contrato: %+v", got[2])
+	}
+}
+
+func TestValidateChangeEventContract(t *testing.T) {
+	base := event{
+		LSN:           pglogrepl.LSN(0x100).String(),
+		TransactionID: 42,
+		Schema:        "public",
+		Table:         "clientes",
+	}
+	tests := []struct {
+		name    string
+		event   event
+		wantErr bool
+	}{
+		{
+			name:  "insert",
+			event: event{Type: eventInsert, LSN: base.LSN, TransactionID: base.TransactionID, Schema: base.Schema, Table: base.Table, Data: map[string]any{"id": int64(1)}},
+		},
+		{
+			name:  "update",
+			event: event{Type: eventUpdate, LSN: base.LSN, TransactionID: base.TransactionID, Schema: base.Schema, Table: base.Table, Data: map[string]any{"id": int64(1)}, OldData: map[string]any{"id": int64(1)}},
+		},
+		{
+			name:  "delete",
+			event: event{Type: eventDelete, LSN: base.LSN, TransactionID: base.TransactionID, Schema: base.Schema, Table: base.Table, Data: map[string]any{"id": int64(1)}},
+		},
+		{
+			name:    "update sem old_data",
+			event:   event{Type: eventUpdate, LSN: base.LSN, TransactionID: base.TransactionID, Schema: base.Schema, Table: base.Table, Data: map[string]any{"id": int64(1)}},
+			wantErr: true,
+		},
+		{
+			name:    "delete com old_data",
+			event:   event{Type: eventDelete, LSN: base.LSN, TransactionID: base.TransactionID, Schema: base.Schema, Table: base.Table, Data: map[string]any{"id": int64(1)}, OldData: map[string]any{"id": int64(1)}},
+			wantErr: true,
+		},
+		{
+			name:    "sem lsn",
+			event:   event{Type: eventInsert, TransactionID: base.TransactionID, Schema: base.Schema, Table: base.Table, Data: map[string]any{"id": int64(1)}},
+			wantErr: true,
+		},
+		{
+			name:    "sem transaction_id",
+			event:   event{Type: eventInsert, LSN: base.LSN, Schema: base.Schema, Table: base.Table, Data: map[string]any{"id": int64(1)}},
+			wantErr: true,
+		},
+		{
+			name:    "sem origem",
+			event:   event{Type: eventInsert, LSN: base.LSN, TransactionID: base.TransactionID, Data: map[string]any{"id": int64(1)}},
+			wantErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateChangeEvent(test.event)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validateChangeEvent() error = %v, wantErr = %t", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestSchemaStateDetectsStructuralChanges(t *testing.T) {
+	previous, err := relationMetadata(&pglogrepl.RelationMessage{
+		RelationID:   7,
+		Namespace:    "public",
+		RelationName: "clientes",
+		Columns: []*pglogrepl.RelationMessageColumn{
+			{Name: "id", DataType: pgtype.Int8OID, Flags: 1},
+			{Name: "nome", DataType: pgtype.TextOID},
+			{Name: "email", DataType: pgtype.TextOID},
+		},
+	})
+	if err != nil {
+		t.Fatalf("metadata anterior: %v", err)
+	}
+	next, err := relationMetadata(&pglogrepl.RelationMessage{
+		RelationID:   7,
+		Namespace:    "public",
+		RelationName: "clientes",
+		Columns: []*pglogrepl.RelationMessageColumn{
+			{Name: "id", DataType: pgtype.Int8OID, Flags: 1},
+			{Name: "nome", DataType: pgtype.VarcharOID, TypeModifier: 104},
+			{Name: "email", DataType: pgtype.TextOID},
+			{Name: "telefone", DataType: pgtype.TextOID},
+		},
+	})
+	if err != nil {
+		t.Fatalf("metadata atual: %v", err)
+	}
+
+	lsn := pglogrepl.LSN(0x190)
+	changes := compareRelationMetadata(previous, next, lsn, 52)
+	classifications := make(map[schemaMetadataClassification]bool, len(changes))
+	for _, change := range changes {
+		classifications[change.Classification] = true
+		if change.LSN != lsn || change.TransactionID != 52 || change.Schema != "public" || change.Table != "clientes" {
+			t.Fatalf("schema change sem contexto completo: %+v", change)
+		}
+	}
+
+	for _, classification := range []schemaMetadataClassification{metadataColumnAdded, metadataColumnChanged} {
+		if !classifications[classification] {
+			t.Fatalf("mudanca %s nao detectada em %+v", classification, changes)
+		}
+	}
+	if classifications[metadataUnknown] {
+		t.Fatalf("diff inequivoco nao deveria ser UNKNOWN: %+v", changes)
+	}
+}
+
+func TestSchemaStateUsesUnknownForAmbiguousRename(t *testing.T) {
+	previous, err := relationMetadata(&pglogrepl.RelationMessage{
+		RelationID:   7,
+		Namespace:    "public",
+		RelationName: "clientes",
+		Columns: []*pglogrepl.RelationMessageColumn{
+			{Name: "id", DataType: pgtype.Int8OID},
+			{Name: "nome", DataType: pgtype.TextOID},
+		},
+	})
+	if err != nil {
+		t.Fatalf("metadata anterior: %v", err)
+	}
+	next, err := relationMetadata(&pglogrepl.RelationMessage{
+		RelationID:   7,
+		Namespace:    "public",
+		RelationName: "clientes",
+		Columns: []*pglogrepl.RelationMessageColumn{
+			{Name: "id", DataType: pgtype.Int8OID},
+			{Name: "nome_completo", DataType: pgtype.TextOID},
+		},
+	})
+	if err != nil {
+		t.Fatalf("metadata atual: %v", err)
+	}
+
+	changes := compareRelationMetadata(previous, next, 0x190, 52)
+	if len(changes) != 1 || changes[0].Classification != metadataUnknown {
+		t.Fatalf("rename ambiguo deveria produzir somente UNKNOWN: %+v", changes)
+	}
+	if changes[0].Details["reason"] != "columns_added_and_removed" {
+		t.Fatalf("UNKNOWN sem justificativa esperada: %+v", changes[0])
+	}
+}
+
+func TestSchemaStateIgnoresRepeatedMetadata(t *testing.T) {
+	state := schemaState{}
+	relation := &pglogrepl.RelationMessage{
+		RelationID:   7,
+		Namespace:    "public",
+		RelationName: "clientes",
+		Columns: []*pglogrepl.RelationMessageColumn{
+			{Name: "id", DataType: pgtype.Int8OID, Flags: 1},
+			{Name: "nome", DataType: pgtype.TextOID},
+		},
+	}
+
+	if changes, err := state.observeRelation(relation, 0x180, 50); err != nil || len(changes) != 0 {
+		t.Fatalf("primeiro snapshot deveria ser apenas baseline: %+v", changes)
+	}
+	if changes, err := state.observeRelation(relation, 0x190, 51); err != nil || len(changes) != 0 {
+		t.Fatalf("metadata identica nao deveria produzir schema change: %+v", changes)
+	}
+}
+
+func TestRelationMessageDetectOnlyDoesNotCreateChangeEvent(t *testing.T) {
+	decoder := newPgoutputDecoder("unit-test")
+	output := &recordingSink{}
+	metrics := newMetrics()
+	ctx := context.Background()
+
+	initialRelation := &pglogrepl.RelationMessage{
+		RelationID:   7,
+		Namespace:    "public",
+		RelationName: "clientes",
+		Columns: []*pglogrepl.RelationMessageColumn{
+			{Name: "id", DataType: pgtype.Int8OID},
+			{Name: "nome", DataType: pgtype.TextOID},
+		},
+	}
+	changedRelation := &pglogrepl.RelationMessage{
+		RelationID:   7,
+		Namespace:    "public",
+		RelationName: "clientes",
+		Columns: []*pglogrepl.RelationMessageColumn{
+			{Name: "id", DataType: pgtype.Int8OID},
+			{Name: "nome", DataType: pgtype.TextOID},
+			{Name: "telefone", DataType: pgtype.TextOID},
+		},
+	}
+
+	if _, _, err := decoder.processMessage(ctx, initialRelation, 0x180, output, metrics); err != nil {
+		t.Fatalf("processar relacao inicial: %v", err)
+	}
+	if metrics.schemaMetadataChanges.Load() != 0 {
+		t.Fatalf("primeiro snapshot nao deveria contar schema change")
+	}
+	if _, _, err := decoder.processMessage(ctx, &pglogrepl.BeginMessage{FinalLSN: 0x188, Xid: 52}, 0x188, output, metrics); err != nil {
+		t.Fatalf("processar begin: %v", err)
+	}
+	if _, _, err := decoder.processMessage(ctx, changedRelation, 0x190, output, metrics); err != nil {
+		t.Fatalf("processar relacao alterada: %v", err)
+	}
+	if got := metrics.schemaMetadataChanges.Load(); got != 1 {
+		t.Fatalf("cdc_schema_metadata_changes_total=%d, esperado 1", got)
+	}
+	if got := metrics.snapshot()["cdc_schema_metadata_changes_total"]; got != uint64(1) {
+		t.Fatalf("metrica /metrics cdc_schema_metadata_changes_total=%v, esperado 1", got)
+	}
+	if got := metrics.schemaMetadataRelationMessages.Load(); got != 2 {
+		t.Fatalf("cdc_schema_metadata_relation_messages_total=%d, esperado 2", got)
+	}
+	if len(output.transactions) != 0 || len(decoder.tx.events) != 0 {
+		t.Fatalf("schema change nao deve virar evento DML: tx=%+v output=%+v", decoder.tx, output.transactions)
+	}
+	if len(decoder.tx.schemaChanges) != 0 {
+		t.Fatalf("RelationMessage nao deve encaminhar schemaChanges para apply: %+v", decoder.tx.schemaChanges)
+	}
+}
+
+func TestFileSinkPreservesDeleteEventContract(t *testing.T) {
+	filename := filepath.Join(t.TempDir(), "events.jsonl")
+	sink, err := newFileSink(filename)
+	if err != nil {
+		t.Fatalf("criar FileSink: %v", err)
+	}
+
+	eventLSN := pglogrepl.LSN(0x188)
+	_, err = sink.ApplyTransaction(context.Background(), sourceTransaction{
+		sourceID:      "unit-test",
+		commitLSN:     pglogrepl.LSN(0x200),
+		transactionID: 50,
+		events: []event{{
+			Type:          eventDelete,
+			LSN:           eventLSN.String(),
+			TransactionID: 50,
+			Schema:        "public",
+			Table:         "clientes",
+			Data:          map[string]any{"id": int64(1), "nome": "Removido"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("aplicar transacao no FileSink: %v", err)
+	}
+	if err := sink.Close(context.Background()); err != nil {
+		t.Fatalf("fechar FileSink: %v", err)
+	}
+
+	events := readEvents(t, filename)
+	if len(events) != 1 {
+		t.Fatalf("esperado um evento, recebidos %d", len(events))
+	}
+	got := events[0]
+	if got.LSN != eventLSN.String() {
+		t.Fatalf("FileSink alterou o LSN do evento: esperado=%s atual=%s", eventLSN, got.LSN)
+	}
+	if got.Data["nome"] != "Removido" || got.OldData != nil {
+		t.Fatalf("DELETE serializado fora do contrato: %+v", got)
+	}
+}
+
+func TestDecoderRejectsUpdateWithoutOldData(t *testing.T) {
+	decoder := decoderWithClientesRelation()
+	output := &recordingSink{}
+	metrics := newMetrics()
+	ctx := context.Background()
+
+	if _, _, err := decoder.processMessage(ctx, &pglogrepl.BeginMessage{FinalLSN: 0x180, Xid: 50}, 0x180, output, metrics); err != nil {
+		t.Fatalf("preparar transacao: %v", err)
+	}
+	_, _, err := decoder.processMessage(ctx, &pglogrepl.UpdateMessage{
+		RelationID: 7,
+		NewTuple:   clientesTuple("1", "Atualizado", "update@teste.com"),
+	}, 0x188, output, metrics)
+	if err == nil || !strings.Contains(err.Error(), "REPLICA IDENTITY FULL") {
+		t.Fatalf("UPDATE sem old_data deveria orientar REPLICA IDENTITY FULL: %v", err)
+	}
 }
 
 func TestDecoderKeepsTransactionAcrossXLogData(t *testing.T) {
@@ -622,7 +1051,7 @@ func TestDecoderKeepsTransactionAcrossXLogData(t *testing.T) {
 		commitPayload(0x220, 0x228),
 	}
 	for index, frame := range frames {
-		commitLSN, _, err := decoder.process(ctx, frame, pglogrepl.LSN(0x200+index), output, metrics)
+		commitLSN, _, err := decoder.process(ctx, frame, pglogrepl.LSN(0x200+index), 0, output, metrics)
 		if err != nil {
 			t.Fatalf("processar XLogData %d: %v", index+1, err)
 		}
@@ -757,6 +1186,17 @@ func TestProcessedLSNNeverRegresses(t *testing.T) {
 	}
 }
 
+func TestPgoutputStreamingProtocolRemainsDisabled(t *testing.T) {
+	args := pgoutputPluginArgs("cdc_publication")
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "proto_version '1'") {
+		t.Fatalf("SPEC 19 exige pgoutput v1 nesta fase, args=%v", args)
+	}
+	if strings.Contains(joined, "streaming") {
+		t.Fatalf("streaming de transacoes nao deve ser habilitado nesta fase: args=%v", args)
+	}
+}
+
 type recordingSink struct {
 	transactions []sourceTransaction
 	err          error
@@ -864,6 +1304,7 @@ type testConsumer struct {
 	command *exec.Cmd
 	output  *safeBuffer
 	done    chan struct{}
+	slot    string
 
 	mu      sync.Mutex
 	exitErr error
@@ -872,10 +1313,15 @@ type testConsumer struct {
 
 func startConsumer(t *testing.T, db *pgx.Conn, outputFile string, extraEnv map[string]string) *testConsumer {
 	t.Helper()
-	requireSlotInactive(t, db)
+	return startConsumerWithSlot(t, db, testSlotName(), outputFile, extraEnv)
+}
+
+func startConsumerWithSlot(t *testing.T, db *pgx.Conn, slotName, outputFile string, extraEnv map[string]string) *testConsumer {
+	t.Helper()
+	requireSlotInactiveNamed(t, db, slotName)
 
 	overrides := map[string]string{
-		"CDC_SLOT":            testSlotName,
+		"CDC_SLOT":            slotName,
 		"CDC_SINK":            "file",
 		"CDC_OUTPUT_FILE":     outputFile,
 		"CDC_STATUS_INTERVAL": "50ms",
@@ -889,6 +1335,7 @@ func startConsumer(t *testing.T, db *pgx.Conn, outputFile string, extraEnv map[s
 		command: exec.Command(consumerBinaryPath),
 		output:  &safeBuffer{},
 		done:    make(chan struct{}),
+		slot:    slotName,
 	}
 	consumer.command.Env = environmentWith(overrides)
 	consumer.command.Stdout = consumer.output
@@ -950,7 +1397,7 @@ func (consumer *testConsumer) stop(t *testing.T, db *pgx.Conn, abrupt bool) {
 	if !abrupt && consumer.error() != nil {
 		t.Fatalf("consumidor encerrou com erro: %v\n%s", consumer.error(), consumer.output.String())
 	}
-	waitForSlotInactive(t, db)
+	waitForSlotInactiveNamed(t, db, consumer.slot)
 }
 
 func (consumer *testConsumer) cleanup(db *pgx.Conn) {
@@ -971,7 +1418,7 @@ func (consumer *testConsumer) cleanup(db *pgx.Conn) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	for ctx.Err() == nil {
-		state, err := querySlot(ctx, db)
+		state, err := querySlotNamed(ctx, db, consumer.slot)
 		if err == nil && !state.active {
 			return
 		}
@@ -1009,25 +1456,100 @@ func openTestDatabase(t *testing.T) *pgx.Conn {
 		WHERE slot_name = $1
 		  AND slot_type = 'logical'
 		  AND database = current_database()
-	`, testSlotName).Scan(&plugin)
+	`, testSlotName()).Scan(&plugin)
 	if errors.Is(err, pgx.ErrNoRows) {
-		t.Fatalf("slot %q nao existe; execute ./scripts/create-slot.sh", testSlotName)
+		t.Fatalf("slot %q nao existe; execute ./scripts/create-slot.sh", testSlotName())
 	}
 	if err != nil {
-		t.Fatalf("consultar slot %q: %v", testSlotName, err)
+		t.Fatalf("consultar slot %q: %v", testSlotName(), err)
 	}
 	if plugin != expectedPlugin {
-		t.Fatalf("slot %q usa %q; esperado %q", testSlotName, plugin, expectedPlugin)
+		t.Fatalf("slot %q usa %q; esperado %q", testSlotName(), plugin, expectedPlugin)
 	}
 
 	return conn
 }
 
-func readSlot(t *testing.T, db *pgx.Conn) databaseSlot {
+func openDestinationDatabase(t *testing.T) *pgx.Conn {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	config, err := destinationPGConfig()
+	if err != nil {
+		t.Fatalf("configurar PostgreSQL destination: %v", err)
+	}
+	conn, err := pgx.ConnectConfig(ctx, config)
+	if err != nil {
+		t.Fatalf("conectar ao PostgreSQL destination: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = conn.Close(context.Background())
+	})
+	return conn
+}
+
+func assertDistinctDatabases(t *testing.T, source, destination *pgx.Conn) {
+	t.Helper()
+	sourceConfig := source.Config()
+	destinationConfig := destination.Config()
+	if sourceConfig.Host == destinationConfig.Host &&
+		sourceConfig.Port == destinationConfig.Port &&
+		sourceConfig.Database == destinationConfig.Database {
+		t.Fatal("teste detect-only exige Source e Destination distintos")
+	}
+}
+
+func columnExists(t *testing.T, db *pgx.Conn, schema, table, column string) bool {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	state, err := querySlot(ctx, db)
+	var exists bool
+	if err := db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = $1
+			  AND table_name = $2
+			  AND column_name = $3
+		)
+	`, schema, table, column).Scan(&exists); err != nil {
+		t.Fatalf("consultar coluna %s.%s.%s: %v", schema, table, column, err)
+	}
+	return exists
+}
+
+func schemaChangeLogLSN(t *testing.T, output, column string) pglogrepl.LSN {
+	t.Helper()
+	for _, line := range strings.Split(output, "\n") {
+		if !strings.Contains(line, "event=schema_metadata_change_observed") || !strings.Contains(line, "column="+column) {
+			continue
+		}
+		for _, field := range strings.Fields(line) {
+			if !strings.HasPrefix(field, "lsn=") {
+				continue
+			}
+			lsn, err := pglogrepl.ParseLSN(strings.TrimPrefix(field, "lsn="))
+			if err != nil {
+				t.Fatalf("LSN invalido no log de schema change: %q: %v", field, err)
+			}
+			return lsn
+		}
+	}
+	t.Fatalf("log de schema change da coluna %s nao encontrado:\n%s", column, output)
+	return 0
+}
+
+func readSlot(t *testing.T, db *pgx.Conn) databaseSlot {
+	t.Helper()
+	return readSlotNamed(t, db, testSlotName())
+}
+
+func readSlotNamed(t *testing.T, db *pgx.Conn, slotName string) databaseSlot {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	state, err := querySlotNamed(ctx, db, slotName)
 	if err != nil {
 		t.Fatalf("consultar estado do slot: %v", err)
 	}
@@ -1035,6 +1557,10 @@ func readSlot(t *testing.T, db *pgx.Conn) databaseSlot {
 }
 
 func querySlot(ctx context.Context, db *pgx.Conn) (databaseSlot, error) {
+	return querySlotNamed(ctx, db, testSlotName())
+}
+
+func querySlotNamed(ctx context.Context, db *pgx.Conn, slotName string) (databaseSlot, error) {
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 2*time.Second)
@@ -1047,7 +1573,7 @@ func querySlot(ctx context.Context, db *pgx.Conn) (databaseSlot, error) {
 		SELECT confirmed_flush_lsn::text, active
 		FROM pg_replication_slots
 		WHERE slot_name = $1
-	`, testSlotName).Scan(&lsnText, &state.active)
+	`, slotName).Scan(&lsnText, &state.active)
 	if err != nil {
 		return state, err
 	}
@@ -1057,23 +1583,46 @@ func querySlot(ctx context.Context, db *pgx.Conn) (databaseSlot, error) {
 
 func requireSlotInactive(t *testing.T, db *pgx.Conn) {
 	t.Helper()
-	if state := readSlot(t, db); state.active {
-		t.Fatalf("slot %q esta ativo; encerre o consumidor antes dos testes", testSlotName)
+	requireSlotInactiveNamed(t, db, testSlotName())
+}
+
+func requireSlotInactiveNamed(t *testing.T, db *pgx.Conn, slotName string) {
+	t.Helper()
+	if state := readSlotNamed(t, db, slotName); state.active {
+		t.Fatalf("slot %q esta ativo; encerre o consumidor antes dos testes", slotName)
 	}
 }
 
 func waitForSlotInactive(t *testing.T, db *pgx.Conn) {
 	t.Helper()
+	waitForSlotInactiveNamed(t, db, testSlotName())
+}
+
+func waitForSlotInactiveNamed(t *testing.T, db *pgx.Conn, slotName string) {
+	t.Helper()
 	waitUntil(t, testTimeout, "slot ficar inativo", func() (bool, error) {
-		state, err := querySlot(context.Background(), db)
+		state, err := querySlotNamed(context.Background(), db, slotName)
 		return !state.active, err
 	})
 }
 
 func waitForAcknowledgement(t *testing.T, db *pgx.Conn, target pglogrepl.LSN) {
 	t.Helper()
-	waitUntil(t, testTimeout, fmt.Sprintf("confirmacao do LSN %s", target), func() (bool, error) {
+	waitForAcknowledgementNamed(t, db, testSlotName(), target)
+}
+
+func waitForAcknowledgementAdvance(t *testing.T, db *pgx.Conn, previous pglogrepl.LSN) {
+	t.Helper()
+	waitUntil(t, testTimeout, fmt.Sprintf("confirmed LSN avancar alem de %s", previous), func() (bool, error) {
 		state, err := querySlot(context.Background(), db)
+		return state.confirmedLSN > previous, err
+	})
+}
+
+func waitForAcknowledgementNamed(t *testing.T, db *pgx.Conn, slotName string, target pglogrepl.LSN) {
+	t.Helper()
+	waitUntil(t, testTimeout, fmt.Sprintf("confirmacao do LSN %s", target), func() (bool, error) {
+		state, err := querySlotNamed(context.Background(), db, slotName)
 		return state.confirmedLSN >= target, err
 	})
 }

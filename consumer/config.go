@@ -13,6 +13,7 @@ const (
 	defaultSourceID          = "cdc-demo"
 	defaultSink              = "file"
 	defaultPostgresApplyMode = "explicit"
+	defaultSchemaEvolution   = "disabled"
 	defaultTableInclude      = "public.clientes,public.enderecos"
 	defaultRetryInitialDelay = time.Second
 	defaultRetryMaxDelay     = 30 * time.Second
@@ -29,6 +30,8 @@ type appConfig struct {
 	destConfig               *pgx.ConnConfig
 	sinkName                 string
 	postgresApplyMode        string
+	schemaEvolution          string
+	schemaAuditLog           bool
 	includedTables           []qualifiedTable
 	publicationAutoConfigure bool
 	retry                    retryConfig
@@ -76,6 +79,10 @@ func loadConfig() (appConfig, error) {
 	if err != nil {
 		return appConfig{}, err
 	}
+	schemaAuditLog, err := boolFromEnv("CDC_SCHEMA_AUDIT_LOG", false)
+	if err != nil {
+		return appConfig{}, err
+	}
 	publicationAutoConfigure, err := boolFromEnv("CDC_PUBLICATION_AUTOCONFIGURE", false)
 	if err != nil {
 		return appConfig{}, err
@@ -109,6 +116,8 @@ func loadConfig() (appConfig, error) {
 		destConfig:               destConfig,
 		sinkName:                 sinkName,
 		postgresApplyMode:        envOrDefault("CDC_POSTGRES_APPLY_MODE", defaultPostgresApplyMode),
+		schemaEvolution:          envOrDefault("CDC_SCHEMA_EVOLUTION", defaultSchemaEvolution),
+		schemaAuditLog:           schemaAuditLog,
 		includedTables:           includedTables,
 		publicationAutoConfigure: publicationAutoConfigure,
 		retry: retryConfig{
@@ -149,6 +158,9 @@ func validateConfig(cfg appConfig) error {
 	if cfg.sinkName != "file" && cfg.sinkName != "postgres" {
 		return fmt.Errorf("CDC_SINK deve ser file ou postgres: %q", cfg.sinkName)
 	}
+	if cfg.schemaEvolution != "disabled" && cfg.schemaEvolution != "manual" && cfg.schemaEvolution != "auto" {
+		return fmt.Errorf("CDC_SCHEMA_EVOLUTION deve ser disabled, manual ou auto: %q", cfg.schemaEvolution)
+	}
 	if cfg.sinkName == "file" && cfg.outputFileName == "" {
 		return fmt.Errorf("CDC_OUTPUT_FILE is required")
 	}
@@ -170,6 +182,9 @@ func validateConfig(cfg appConfig) error {
 		}
 		if cfg.postgresApplyMode != "explicit" && cfg.postgresApplyMode != "generic" {
 			return fmt.Errorf("CDC_POSTGRES_APPLY_MODE deve ser explicit ou generic: %q", cfg.postgresApplyMode)
+		}
+		if cfg.schemaEvolution == "auto" && cfg.postgresApplyMode != "generic" {
+			return fmt.Errorf("CDC_SCHEMA_EVOLUTION=auto exige CDC_POSTGRES_APPLY_MODE=generic")
 		}
 		if cfg.postgresApplyMode == "generic" && len(cfg.includedTables) == 0 {
 			return fmt.Errorf("CDC_TABLE_INCLUDE e obrigatorio no modo generic")

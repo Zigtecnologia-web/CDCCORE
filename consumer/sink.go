@@ -12,10 +12,13 @@ import (
 )
 
 type sourceTransaction struct {
-	sourceID      string
-	commitLSN     pglogrepl.LSN
-	transactionID uint32
-	events        []event
+	sourceID          string
+	commitLSN         pglogrepl.LSN
+	transactionID     uint32
+	schemaValidations []schemaValidationResult
+	schemaChanges     []schemaChange
+	events            []event
+	metrics           *metrics
 }
 
 type sink interface {
@@ -53,7 +56,6 @@ func (sink *fileSink) Close(context.Context) error {
 func (sink *fileSink) ApplyTransaction(_ context.Context, tx sourceTransaction) ([]string, error) {
 	persisted := make([]string, 0, len(tx.events))
 	for _, event := range tx.events {
-		event.LSN = tx.commitLSN.String()
 		line, err := encodeEvent(event)
 		if err != nil {
 			return nil, err
@@ -71,17 +73,19 @@ func (sink *fileSink) ApplyTransaction(_ context.Context, tx sourceTransaction) 
 }
 
 type postgresSink struct {
-	config         *pgx.ConnConfig
-	conn           *pgx.Conn
-	sourceID       string
-	applyMode      string
-	includedTables map[string]struct{}
-	metadataCache  map[string]destinationTableMetadata
+	config          *pgx.ConnConfig
+	conn            *pgx.Conn
+	sourceID        string
+	applyMode       string
+	schemaEvolution string
+	includedTables  map[string]struct{}
+	metadataCache   map[string]destinationTableMetadata
 }
 
 type postgresSinkOptions struct {
-	applyMode      string
-	includedTables []qualifiedTable
+	applyMode       string
+	schemaEvolution string
+	includedTables  []qualifiedTable
 }
 
 func newPostgresSink(ctx context.Context, config *pgx.ConnConfig, sourceID string) (*postgresSink, error) {
@@ -94,16 +98,20 @@ func newPostgresSinkWithOptions(
 	sourceID string,
 	options postgresSinkOptions,
 ) (*postgresSink, error) {
+	if options.schemaEvolution == "" {
+		options.schemaEvolution = defaultSchemaEvolution
+	}
 	includedTables := make(map[string]struct{}, len(options.includedTables))
 	for _, table := range options.includedTables {
 		includedTables[table.key()] = struct{}{}
 	}
 	sink := &postgresSink{
-		config:         config,
-		sourceID:       sourceID,
-		applyMode:      options.applyMode,
-		includedTables: includedTables,
-		metadataCache:  make(map[string]destinationTableMetadata),
+		config:          config,
+		sourceID:        sourceID,
+		applyMode:       options.applyMode,
+		schemaEvolution: options.schemaEvolution,
+		includedTables:  includedTables,
+		metadataCache:   make(map[string]destinationTableMetadata),
 	}
 	if err := sink.connect(ctx); err != nil {
 		return nil, err
@@ -192,6 +200,29 @@ func (sink *postgresSink) ApplyTransaction(ctx context.Context, sourceTx sourceT
 		return nil, nil
 	}
 
+	validationChanges, err := sink.validateTransactionSchema(ctx, tx, sourceTx)
+	if err != nil {
+		return nil, err
+	}
+	sourceTx.schemaChanges = append(sourceTx.schemaChanges, validationChanges...)
+
+	schemaApplied, err := sink.applySchemaChanges(ctx, tx, sourceTx)
+	schemaApplyCommitted := false
+	defer func() {
+		if !schemaApplyCommitted {
+			for _, change := range schemaApplied {
+				sink.logSchemaApply(sourceTx, change, schemaApplyFailed, schemaApplyRiskLow, "destination_transaction_rolled_back")
+			}
+		}
+	}()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := sink.validateDestinationForEvents(ctx, tx, sourceTx); err != nil {
+		return nil, err
+	}
+
 	for _, event := range sourceTx.events {
 		if sink.applyMode == "generic" {
 			if err := sink.applyGenericEvent(ctx, tx, event); err != nil {
@@ -214,6 +245,10 @@ func (sink *postgresSink) ApplyTransaction(ctx context.Context, sourceTx sourceT
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit no destination: %w", err)
+	}
+	schemaApplyCommitted = true
+	for _, change := range schemaApplied {
+		sink.logSchemaApply(sourceTx, change, schemaApplyApplied, schemaApplyRiskLow, "destination_transaction_committed")
 	}
 	return nil, nil
 }
@@ -260,7 +295,7 @@ func applyClienteEvent(ctx context.Context, tx pgx.Tx, event event) error {
 			return fmt.Errorf("aplicar UPDATE public.clientes no destination: %w", err)
 		}
 	case eventDelete:
-		id := requiredValue(event.OldData, "id")
+		id := requiredValue(event.Data, "id")
 		_, err := tx.Exec(ctx, "DELETE FROM public.clientes WHERE id = $1", id)
 		if err != nil {
 			return fmt.Errorf("aplicar DELETE public.clientes no destination: %w", err)
@@ -303,7 +338,7 @@ func applyEnderecoEvent(ctx context.Context, tx pgx.Tx, event event) error {
 			return fmt.Errorf("aplicar UPDATE public.enderecos no destination: %w", err)
 		}
 	case eventDelete:
-		_, err := tx.Exec(ctx, "DELETE FROM public.enderecos WHERE id = $1", requiredValue(event.OldData, "id"))
+		_, err := tx.Exec(ctx, "DELETE FROM public.enderecos WHERE id = $1", requiredValue(event.Data, "id"))
 		if err != nil {
 			return fmt.Errorf("aplicar DELETE public.enderecos no destination: %w", err)
 		}

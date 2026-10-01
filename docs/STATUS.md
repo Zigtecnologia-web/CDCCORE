@@ -29,7 +29,87 @@ Limitacoes:
 
 - O modo `explicit` suporta `public.clientes` e `public.enderecos`.
 - O modo `generic` suporta tabelas com chave primaria presentes em `CDC_TABLE_INCLUDE`, desde que a estrutura ja exista no destination.
-- Criacao e evolucao de schema no destination continuam sob responsabilidade de migrations.
+- Criacao e evolucao de schema no destination continuam sob responsabilidade de migrations; a deteccao inicial de alteracoes estruturais e apenas observacional.
+
+## SPEC 17
+
+Resultado:
+
+- Introduzido `CDC_SCHEMA_EVOLUTION` com valores `disabled`, `manual` e `auto`; o padrao permanece `disabled`.
+- O PostgreSQL Sink agora recebe mudancas estruturais detectadas como parte da mesma `sourceTransaction` do DML.
+- No modo `auto`, a politica inicial exige apply `generic` e aplica somente `ADD COLUMN` nullable em tabelas aceitas pelo sink.
+- DDL e gerado internamente a partir de metadata tipada e catalogo PostgreSQL; SQL recebido do source nao e executado.
+- Identificadores usam quoting via `pgx.Identifier`, e tipos passam por allowlist antes do apply.
+- O apply ocorre na mesma transacao do destination antes do DML, preservando a regra de ACK somente apos sucesso do sink.
+- Revalidacao pos-DDL e idempotencia cobrem coluna ja existente compativel (`ALREADY_APPLIED`) e conflito de schema.
+- Operacoes `DROP COLUMN`, `DROP TABLE`, `ALTER TYPE`, rename, mudanca de chave primaria, tipos desconhecidos e `ADD COLUMN NOT NULL` permanecem bloqueados.
+- Logs usam `event=schema_apply` com source_id, transaction_id, LSN, schema, tabela, classificacao observada, operacao local, modo, status, risco e motivo.
+- Metricas adicionadas: `cdc_schema_apply_attempts_total`, `cdc_schema_apply_success_total`, `cdc_schema_apply_failure_total` e `cdc_schema_apply_rejected_total`.
+- Testes cobrem aplicacao nullable, modos, whitelist de tipos, conflito, rollback conjunto, replay e coluna compativel ja existente.
+
+## SPEC 20
+
+Estado:
+
+```text
+STATUS: PROPOSED
+```
+
+Documento:
+
+- `docs/SPEC_20_LARGE_TRANSACTIONS.md`
+
+Resultado:
+
+- Definida a estrategia arquitetural futura para processamento de large transactions sem escolher uma implementacao nesta etapa.
+- Mantidas como alternativas em avaliacao: buffer intermediario em disco e transacao aberta no destination.
+- Reafirmados os invariantes obrigatorios: ACK somente apos processamento confirmado, `processedLSN` somente apos sucesso no sink, ordenacao WAL e atomicidade.
+- Estabelecidos requisitos para limites de memoria/disco/eventos, comportamento deterministico ao atingir limites, crash recovery, idempotencia, observabilidade e testes.
+- Explicitado que streaming do `pgoutput`, alteracao de `proto_version`, exactly-once e mudanca do modelo de checkpoint permanecem fora do escopo desta spec.
+- Decisao final devera ser baseada em prototipos experimentais e benchmarks comparaveis com a baseline da SPEC 19.
+
+## SPEC 15
+
+Resultado:
+
+- Criado `RelationMetadata` interno apenas com os campos observaveis no protocolo e um modelo separado de diferencas de metadata.
+- `RelationMessage` e tratada como metadata; snapshots identicos nao geram falso positivo.
+- Diffs observaveis usam `COLUMN_ADDED`, `COLUMN_REMOVED`, `COLUMN_METADATA_CHANGED`, `RELATION_ID_CHANGED` e `RELATION_RENAMED_OR_REPLACED`.
+- Diffs ambiguos, incluindo possivel rename de coluna ou mudanca de ordem, sao registrados como `UNKNOWN`.
+- Logs usam `event=schema_metadata_change_observed`; as metricas separam RelationMessages, mudancas e classificacoes desconhecidas.
+- Teste PostgreSQL real cobre DDL + DML na mesma transacao, schema/tabela/XID/LSN, ausencia de DDL no Destination, ACK antes/depois do sink e recovery apos restart.
+- O contrato publico continua restrito a `INSERT`, `UPDATE` e `DELETE`; detector e sink permanecem separados.
+
+Limitacoes investigadas:
+
+- `pgoutput` fornece metadata da relacao, nao o SQL DDL que a originou.
+- No protocolo v1, o XID associado vem do `BEGIN` ativo; ele nao prova a transacao de um DDL anterior.
+- Default, nullability, `CREATE TABLE` e `DROP TABLE` nao sao detectaveis apenas pelo snapshot atual.
+- O primeiro snapshot apos inicio/reconnect e baseline; nao ha historico persistente de schema nesta fase.
+- DDL sem DML publicado pode nao produzir informacao observavel imediatamente.
+
+## SPEC 14
+
+Arquivos alterados:
+
+- `consumer/main.go`
+- `consumer/schema_evolution.go`
+- `consumer/observability.go`
+- `consumer/main_test.go`
+- `README.md`
+- `docs/TECHNICAL.md`
+
+Resultado:
+
+- Adicionado snapshot local de schema baseado em `RelationMessage` do `pgoutput`.
+- Alteracoes estruturais observaveis em relacoes ja conhecidas usam o log `schema_metadata_change_observed`.
+- Contadores `cdc_schema_metadata_relation_messages_total`, `cdc_schema_metadata_changes_total` e `cdc_schema_metadata_unknown_total` expostos em `/metrics`.
+- O modo permanece detect-only/manual: nao executa DDL no destination, nao cria evento `SCHEMA_CHANGE` publico e nao altera o contrato de `INSERT`, `UPDATE` e `DELETE`.
+
+Limitacoes:
+
+- O primeiro snapshot de uma tabela e usado como baseline e nao e classificado como `CREATE_TABLE`.
+- A SPEC 15 refinou a classificacao: um possivel rename e registrado como `UNKNOWN`, pois `pgoutput` nao fornece a operacao DDL que originou o diff.
 
 ## SPEC 04
 
@@ -155,6 +235,7 @@ Arquivos alterados:
 Resultado:
 
 - Criada medicao opt-in de memoria para transacoes pequenas, grandes e muito grandes usando `runtime.MemStats`.
+- A medicao compara `heap before commit` e `peak observed heap` contra baseline local, com tolerancia configuravel por `CDC_LARGE_TX_MEMORY_TOLERANCE`.
 - Confirmado que o caminho atual acumula toda a transacao em `pgoutputDecoder.tx.events []event` ate o `CommitMessage`.
 - Confirmado que nao ha limite de eventos, bytes, memoria, timeout especifico de transacao grande ou backpressure interno.
 - Investigado o suporte do PostgreSQL 17 e do `pglogrepl` para streaming de transacoes grandes.
@@ -191,13 +272,19 @@ cd consumer
 CDC_MEASURE_LARGE_TX=1 go test -run TestLargeTransactionMemoryBaseline -v
 ```
 
-Resultado observado em 2026-09-27:
+Para maquinas com perfil de runtime diferente, a tolerancia de regressao pode ser ajustada:
+
+```bash
+CDC_MEASURE_LARGE_TX=1 CDC_LARGE_TX_MEMORY_TOLERANCE=4 go test -run TestLargeTransactionMemoryBaseline -v
+```
+
+Resultado observado em 2026-09-30:
 
 | Cenario | Eventos | Duracao | Heap antes do commit | Pico observado | Resultado |
 | --- | ---: | ---: | ---: | ---: | --- |
-| pequena | 1.000 | 2.374583ms | 1.49 MiB | 1.58 MiB | 1 transacao aplicada |
-| grande | 25.000 | 28.800042ms | 16.20 MiB | 18.43 MiB | 1 transacao aplicada |
-| muito grande | 100.000 | 131.511333ms | 63.83 MiB | 72.23 MiB | 1 transacao aplicada |
+| pequena | 1.000 | 2.901083ms | 1.72 MiB | 1.82 MiB | 1 transacao aplicada |
+| grande | 25.000 | 63.408042ms | 18.84 MiB | 21.51 MiB | 1 transacao aplicada |
+| muito grande | 100.000 | 229.230375ms | 74.35 MiB | 85.04 MiB | 1 transacao aplicada |
 
 Modelo de memoria:
 

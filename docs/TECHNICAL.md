@@ -92,6 +92,8 @@ Ao iniciar, o consumidor abre `consumer/cdc.txt` com as opcoes de criar o arquiv
 
 Cada evento de negocio ocupa uma linha JSON. O LSN processado so avanca depois que todos os eventos da transacao foram escritos sem erro. O arquivo nao substitui um checkpoint de LSN: nesta etapa, ele e apenas o destino persistente dos eventos estruturados.
 
+O contrato exige `data` em `INSERT` e `DELETE`, e exige `old_data` e `data` em `UPDATE`. Para que o PostgreSQL forneca o estado anterior completo, as tabelas source devem usar `REPLICA IDENTITY FULL`; o consumer rejeita um `UPDATE` sem `old_data` ou um `DELETE` sem `data`. O `lsn` de cada evento preserva a posicao recebida com a alteracao, enquanto o checkpoint da transacao usa separadamente o `TransactionEndLSN` do `COMMIT`.
+
 Exemplo:
 
 ```json
@@ -134,6 +136,40 @@ Valores sao enviados por parametros PostgreSQL, e identificadores de schema, tab
 
 Para idempotencia, o destino cria `cdc_applied_transactions` com chave primaria `(source_id, commit_lsn)`. Esse registro e gravado na mesma transacao que altera `public.clientes`. Se o processo morrer depois do commit no destino e antes do ACK ao source, a reentrega e detectada por essa chave e os dados de negocio nao sao reaplicados.
 
+### Schema Evolution controlado
+
+O decoder mantem snapshots locais das `RelationMessage` recebidas do `pgoutput`, indexados por `relation_id` e pela identidade `schema.table`. O modelo `RelationMetadata` guarda somente `RelationID`, schema, tabela e, por coluna, nome, OID de tipo e typmod. Nullability, default e DDL original nao sao atribuidos ao protocolo. O modelo interno de diferenca nao faz parte do contrato publico de Change Event.
+
+As diferencas observaveis usam `COLUMN_ADDED`, `COLUMN_REMOVED`, `COLUMN_METADATA_CHANGED`, `RELATION_ID_CHANGED` e `RELATION_RENAMED_OR_REPLACED`. Quando a causa nao pode ser determinada com seguranca, o detector usa `UNKNOWN`. Por exemplo, uma coluna removida e outra adicionada simultaneamente pode representar rename ou operacoes distintas; o CDCCore nao converte isso em DDL presumido.
+
+Essa fase nao cria eventos `SCHEMA_CHANGE` no contrato publico. As mudancas observadas usam o log `event=schema_metadata_change_observed`, associado ao relation ID, LSN e XID ativo quando disponivel. `/metrics` expoe os contadores `cdc_schema_metadata_relation_messages_total`, `cdc_schema_metadata_changes_total` e `cdc_schema_metadata_unknown_total`.
+
+`CDC_SCHEMA_EVOLUTION` controla a etapa de aplicacao:
+
+- `disabled`: padrao; nenhuma DDL e executada no destination.
+- `manual`: registra bloqueio para autorizacao externa futura; nenhuma DDL e executada automaticamente.
+- `auto`: avalia politica e aplica somente operacoes permitidas.
+
+Na primeira politica automatica, apenas `ADD COLUMN` nullable pode ser aplicado e o modo `generic` e obrigatorio para que o DML inclua a nova coluna. O decoder enriquece a observacao com a validacao atual de source/destination; em recovery, uma coluna ausente validada no destination tambem gera um candidato interno sem alegar qual DDL ocorreu no source. O PostgreSQL Sink gera o DDL tipado usando escaping com `pgx.Identifier`. O CDCCore nunca executa SQL DDL recebido do source.
+
+Tipos aceitos inicialmente sao uma allowlist pequena de tipos PostgreSQL escalares, incluindo `TEXT`, `INTEGER`, `BIGINT`, `BOOLEAN`, `JSONB`, `DATE`, `UUID`, `TIMESTAMP`, `TIME`, `NUMERIC` e `VARCHAR` com definicao vinda do catalogo. Tipos desconhecidos sao bloqueados.
+
+O apply ocorre dentro da mesma transacao do PostgreSQL Sink, antes dos eventos DML da source transaction. Assim, `processedLSN` continua avancando somente depois que schema apply, DML e registro de idempotencia confirmarem juntos no destination. Se a coluna ja existir, o sink revalida tipo/nullability antes de considerar `ALREADY_APPLIED`; se existir de forma incompatível, a transacao falha e o ACK nao avanca.
+
+`CREATE TABLE`, `DROP COLUMN`, `DROP TABLE`, `ALTER TYPE`, rename e alteracao de chave primaria continuam bloqueados. No modo `generic`, a mesma allowlist de `CDC_TABLE_INCLUDE` limita o schema apply. No modo `explicit`, o apply fica restrito as tabelas explicitamente suportadas. Os logs usam `event=schema_apply`; as metricas sao `cdc_schema_apply_attempts_total`, `cdc_schema_apply_success_total`, `cdc_schema_apply_failure_total` e `cdc_schema_apply_rejected_total`.
+
+#### Investigacao do pgoutput
+
+O protocolo usado continua sendo `pgoutput` v1. A `RelationMessage` descreve OID da relacao, namespace, nome, replica identity e, para cada coluna publicada, nome, flag de chave, OID do tipo e type modifier. Ela e metadata necessaria para interpretar DML e nao representa necessariamente um `ALTER TABLE`.
+
+O PostgreSQL envia a descricao da relacao antes do primeiro DML relevante daquela relacao no stream. Reapresentar metadata identica nao gera deteccao. Quando a descricao muda, o detector compara os snapshots; o primeiro snapshot observado e apenas baseline. Como o protocolo v1 nao inclui XID dentro da propria `RelationMessage`, o `transaction_id` registrado e o `BEGIN` ativo no decoder. Ele identifica a transacao de stream que apresentou a metadata e o DML, mas nao prova qual transacao executou um DDL anterior. Para a posicao, o detector usa o `WALStart` da mensagem; quando o frame de metadata chega com `0/0`, usa o `FinalLSN` do `BEGIN` ativo como posicao transacional disponivel.
+
+O `pgoutput` nao fornece o SQL DDL, default, nullability nem uma notificacao geral de `CREATE TABLE`/`DROP TABLE`. Detectar essas propriedades ou reconstruir a operacao exata exigira consultar `pg_catalog` ou adotar outra fonte de eventos em uma SPEC futura. Uma alteracao DDL sem DML publicado pode permanecer invisivel ate uma relacao voltar a ser descrita.
+
+O snapshot e volatil e reconstruido a cada conexao. Depois de reconnect, a primeira descricao volta a ser baseline; se o intervalo reprocessado contiver snapshots anterior e posterior, a mudanca podera ser observada novamente. Nao existe historico persistente de Schema Changes nesta fase.
+
+Referencias da investigacao: [formato das mensagens de replicacao logica](https://www.postgresql.org/docs/current/protocol-logicalrep-message-formats.html) e [comportamento de schema na replicacao logica](https://www.postgresql.org/docs/current/logical-replication-subscription.html).
+
 ## Large Transactions
 
 ### Current behavior
@@ -169,13 +205,21 @@ cd consumer
 CDC_MEASURE_LARGE_TX=1 go test -run TestLargeTransactionMemoryBaseline -v
 ```
 
-Linha de base observada em 2026-09-27 no ambiente local, com payload sintetico pequeno de `public.clientes`:
+O teste compara `heap before commit` e `peak observed heap` com a linha de base abaixo usando tolerancia padrao de `3.0x`. Para ajustar a tolerancia em uma maquina diferente:
+
+```bash
+CDC_MEASURE_LARGE_TX=1 CDC_LARGE_TX_MEMORY_TOLERANCE=4 go test -run TestLargeTransactionMemoryBaseline -v
+```
+
+Essa checagem e uma barreira contra regressao grosseira de memoria, nao uma garantia de limite operacional. Ela nao impede OOM em producao.
+
+Linha de base observada em 2026-09-30 no ambiente local, com payload sintetico pequeno de `public.clientes`:
 
 | Cenario | Eventos | Duracao | Heap antes do commit | Pico observado | Resultado |
 | --- | ---: | ---: | ---: | ---: | --- |
-| pequena | 1.000 | 2.374583ms | 1.49 MiB | 1.58 MiB | 1 transacao aplicada |
-| grande | 25.000 | 28.800042ms | 16.20 MiB | 18.43 MiB | 1 transacao aplicada |
-| muito grande | 100.000 | 131.511333ms | 63.83 MiB | 72.23 MiB | 1 transacao aplicada |
+| pequena | 1.000 | 2.901083ms | 1.72 MiB | 1.82 MiB | 1 transacao aplicada |
+| grande | 25.000 | 63.408042ms | 18.84 MiB | 21.51 MiB | 1 transacao aplicada |
+| muito grande | 100.000 | 229.230375ms | 74.35 MiB | 85.04 MiB | 1 transacao aplicada |
 
 Esses valores nao sao requisito de performance: servem apenas como linha de base reproduzivel. Transacoes com colunas maiores, `OldData`, mais tabelas ou sinks mais caros podem consumir muito mais memoria.
 
@@ -216,6 +260,35 @@ Justificativa:
 - A medicao local mostrou crescimento linear e reproduzivel, mas nao demonstrou necessidade imediata de trocar o modelo.
 - Streaming reduziria memoria do decoder, mas introduz uma decisao de sink nao trivial: manter atomicidade source/destination com buffer em disco ou com transacao longa aberta no destino.
 - Implementar streaming sem resolver essa atomicidade poderia quebrar a garantia mais importante do projeto.
+
+### Future strategies
+
+Duas estrategias ficam documentadas para uma SPEC futura:
+
+```text
+Source
+  -> Stream segments
+  -> Temporary storage
+  -> StreamCommit
+  -> Apply transaction
+  -> Destination COMMIT
+  -> ACK
+```
+
+Buffer em disco reduz pressao de heap e preserva aplicacao somente apos `StreamCommit`, mas exige armazenamento temporario, limpeza, recovery, replay e validacao de integridade.
+
+```text
+StreamStart
+  -> Destination transaction
+  -> DML
+  -> StreamStop
+  -> ...
+  -> StreamCommit
+  -> Destination COMMIT
+  -> ACK
+```
+
+Transacao aberta no destination evita armazenar tudo em heap ou disco intermediario, mas pode manter locks, WAL, conexao e vacuum pressionados durante toda a transacao source e pode exigir rollback grande.
 
 ### Transaction semantics
 
@@ -480,7 +553,7 @@ No Terminal 1 e em `consumer/cdc.txt`, a saida tera uma linha JSON por evento de
 ```json
 {"type":"INSERT","lsn":"0/...","transaction_id":123,"schema":"public","table":"clientes","data":{"id":1,"nome":"CDC TXT","email":"cdc-txt@teste.com"}}
 {"type":"UPDATE","lsn":"0/...","transaction_id":124,"schema":"public","table":"clientes","data":{"id":1,"nome":"CDC TXT Atualizado","email":"cdc-txt@teste.com"},"old_data":{"id":1,"nome":"CDC TXT","email":"cdc-txt@teste.com"}}
-{"type":"DELETE","lsn":"0/...","transaction_id":125,"schema":"public","table":"clientes","old_data":{"id":1,"nome":"CDC TXT Atualizado","email":"cdc-txt@teste.com"}}
+{"type":"DELETE","lsn":"0/...","transaction_id":125,"schema":"public","table":"clientes","data":{"id":1,"nome":"CDC TXT Atualizado","email":"cdc-txt@teste.com"}}
 ```
 
 As operacoes seguintes aparecem como `UPDATE` e `DELETE`. Pressione `Ctrl+C` no Terminal 1 para fechar o arquivo e encerrar o consumidor. Execute novamente `go run .` e repita uma operacao para comprovar que os novos eventos sao adicionados ao final de `cdc.txt` sem apagar o conteudo existente.
@@ -547,7 +620,7 @@ O script `./scripts/test-cdc.sh` continua disponivel para validar somente o Post
 
 O ambiente local usa `postgres/postgres` e publica `0.0.0.0:5432` apenas por conveniencia de desenvolvimento. Em producao, use usuarios separados para source e destination.
 
-O usuario de source precisa de permissao de replicacao logica e leitura dos metadados necessarios do slot/publication; ele nao deve ser superuser. Quando `CDC_PUBLICATION_AUTOCONFIGURE=true`, esse usuario tambem precisa poder alterar a publication. O usuario de destination deve ter permissao para consultar os metadados e executar `INSERT`, `UPDATE` e `DELETE` em todas as tabelas de `CDC_TABLE_INCLUDE`, alem de criar/alterar `cdc_applied_transactions` ou receber essa tabela ja provisionada por migracao.
+O usuario de source precisa de permissao de replicacao logica e leitura dos metadados necessarios do slot/publication; ele nao deve ser superuser. Quando `CDC_PUBLICATION_AUTOCONFIGURE=true`, esse usuario tambem precisa poder alterar a publication. O usuario de destination deve ter permissao para consultar os metadados e executar `INSERT`, `UPDATE` e `DELETE` em todas as tabelas de `CDC_TABLE_INCLUDE`, alem de criar/alterar `cdc_applied_transactions` ou receber essa tabela ja provisionada por migracao. Com `CDC_SCHEMA_EVOLUTION=disabled` ou `manual`, Schema Evolution nao exige permissao DDL no destination. Com `CDC_SCHEMA_EVOLUTION=auto`, o usuario de destination precisa das permissoes minimas para as operacoes automaticas habilitadas, inicialmente `ALTER TABLE ... ADD COLUMN` nas tabelas permitidas; nao use superuser ou `GRANT ALL` como atalho operacional.
 
 TLS pode ser configurado por `CDC_SOURCE_PGSSLMODE` no source e `CDC_DEST_PGSSLMODE` no destination. O modo local padrao e `disable`.
 

@@ -181,7 +181,7 @@ func applyGenericUpdate(ctx context.Context, tx pgx.Tx, table qualifiedTable, me
 }
 
 func applyGenericDelete(ctx context.Context, tx pgx.Tx, table qualifiedTable, metadata destinationTableMetadata, event event) error {
-	keyValues, err := primaryKeyValues(metadata.primaryKey, event.OldData, event.Data)
+	keyValues, err := primaryKeyValues(metadata.primaryKey, event.Data, nil)
 	if err != nil {
 		return fmt.Errorf("DELETE %s: %w", table.key(), err)
 	}

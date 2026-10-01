@@ -25,6 +25,7 @@ const (
 	defaultSlotName       = "cdc_slot"
 	defaultPublication    = "cdc_publication"
 	expectedPlugin        = "pgoutput"
+	pgoutputProtoVersion  = "1"
 	defaultOutputFileName = "cdc.txt"
 	defaultStatusInterval = 10 * time.Second
 	shutdownTimeout       = 3 * time.Second
@@ -74,21 +75,32 @@ type event struct {
 type relationRegistry map[uint32]*pglogrepl.RelationMessage
 
 type transactionState struct {
-	id       uint32
-	beginLSN pglogrepl.LSN
-	events   []event
+	id                uint32
+	beginLSN          pglogrepl.LSN
+	events            []event
+	schemaValidations []schemaValidationResult
+	schemaChanges     []schemaChange
 }
 
 type pgoutputDecoder struct {
 	relations relationRegistry
+	schema    schemaState
+	validator schemaValidator
+	audit     *schemaAuditLogger
 	types     *pgtype.Map
 	tx        *transactionState
 	sourceID  string
 }
 
 func newPgoutputDecoder(sourceID string) *pgoutputDecoder {
+	return newPgoutputDecoderWithValidator(sourceID, nil)
+}
+
+func newPgoutputDecoderWithValidator(sourceID string, validator schemaValidator) *pgoutputDecoder {
 	return &pgoutputDecoder{
 		relations: relationRegistry{},
+		schema:    schemaState{},
+		validator: validator,
 		types:     pgtype.NewMap(),
 		sourceID:  sourceID,
 	}
@@ -172,6 +184,31 @@ func runOnce(ctx context.Context, cfg appConfig, metrics *metrics, readiness *re
 			runErr = fmt.Errorf("fechar sink %q: %w", output.Name(), err)
 		}
 	}()
+	var validator schemaValidator
+	if cfg.sinkName == "postgres" {
+		validator, err = newPostgresSchemaValidator(ctx, cfg.sourceConfig, cfg.destConfig, cfg.includedTables)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if err := validator.Close(context.Background()); err != nil && runErr == nil {
+				runErr = fmt.Errorf("fechar validator de schema: %w", err)
+			}
+		}()
+	}
+	var auditCatalog *schemaCatalogReader
+	if cfg.schemaAuditLog {
+		auditConn, err := pgx.ConnectConfig(ctx, cfg.sourceConfig)
+		if err != nil {
+			return fmt.Errorf("conexao source para auditoria de schema: %w", err)
+		}
+		auditCatalog = &schemaCatalogReader{name: "source-audit", conn: auditConn}
+		defer func() {
+			if err := auditConn.Close(context.Background()); err != nil && runErr == nil {
+				runErr = fmt.Errorf("fechar conexao de auditoria de schema: %w", err)
+			}
+		}()
+	}
 
 	replicationConfig := cfg.sourceConfig.Config.Copy()
 	replicationConfig.RuntimeParams["replication"] = "database"
@@ -200,11 +237,8 @@ func runOnce(ctx context.Context, cfg appConfig, metrics *metrics, readiness *re
 		cfg.slotName,
 		state.confirmedLSN,
 		pglogrepl.StartReplicationOptions{
-			Mode: pglogrepl.LogicalReplication,
-			PluginArgs: []string{
-				"proto_version '1'",
-				fmt.Sprintf("publication_names '%s'", cfg.publication),
-			},
+			Mode:       pglogrepl.LogicalReplication,
+			PluginArgs: pgoutputPluginArgs(cfg.publication),
 		},
 	); err != nil {
 		return fmt.Errorf("iniciar replicacao no slot %q: %w", cfg.slotName, err)
@@ -212,7 +246,14 @@ func runOnce(ctx context.Context, cfg appConfig, metrics *metrics, readiness *re
 
 	readiness.setReady()
 	log.Println("aguardando eventos; pressione Ctrl+C para encerrar")
-	return consume(ctx, conn, output, state.confirmedLSN, cfg.statusInterval, cfg.pauseBeforeAck, cfg.pauseMatch, cfg.sourceID, metrics, readiness)
+	return consume(ctx, conn, output, validator, auditCatalog, state.confirmedLSN, cfg.statusInterval, cfg.pauseBeforeAck, cfg.pauseMatch, cfg.sourceID, metrics, readiness)
+}
+
+func pgoutputPluginArgs(publication string) []string {
+	return []string{
+		fmt.Sprintf("proto_version '%s'", pgoutputProtoVersion),
+		fmt.Sprintf("publication_names '%s'", publication),
+	}
 }
 
 func readSlotState(ctx context.Context, config *pgx.ConnConfig, slotName string) (slotState, error) {
@@ -254,6 +295,8 @@ func consume(
 	ctx context.Context,
 	conn *pgconn.PgConn,
 	output sink,
+	validator schemaValidator,
+	auditCatalog *schemaCatalogReader,
 	startLSN pglogrepl.LSN,
 	statusInterval time.Duration,
 	pauseBeforeAck bool,
@@ -268,7 +311,10 @@ func consume(
 	}
 	metrics.setProcessed(startLSN)
 	metrics.setConfirmed(startLSN)
-	decoder := newPgoutputDecoder(sourceID)
+	decoder := newPgoutputDecoderWithValidator(sourceID, validator)
+	if auditCatalog != nil {
+		decoder.audit = &schemaAuditLogger{catalog: auditCatalog}
+	}
 	nextStatus := time.Now().Add(statusInterval)
 	pauseArmed := false
 
@@ -317,7 +363,7 @@ func consume(
 
 			state.receivedLSN = xlogData.WALStart
 			state.serverWALEnd = xlogData.ServerWALEnd
-			commitLSN, persisted, err := decoder.process(ctx, xlogData.WALData, xlogData.WALStart, output, metrics)
+			commitLSN, persisted, err := decoder.process(ctx, xlogData.WALData, xlogData.WALStart, xlogData.ServerWALEnd, output, metrics)
 			if err != nil {
 				metrics.sinkErrors.Add(1)
 				readiness.setNotReady(err)
@@ -371,6 +417,7 @@ func (decoder *pgoutputDecoder) process(
 	ctx context.Context,
 	walData []byte,
 	messageLSN pglogrepl.LSN,
+	serverWALEnd pglogrepl.LSN,
 	output sink,
 	metrics *metrics,
 ) (pglogrepl.LSN, []string, error) {
@@ -380,7 +427,7 @@ func (decoder *pgoutputDecoder) process(
 	if err != nil {
 		return 0, nil, fmt.Errorf("decodificar mensagem pgoutput: %w", err)
 	}
-	return decoder.processMessage(ctx, message, messageLSN, output, metrics)
+	return decoder.processMessageWithServerWALEnd(ctx, message, messageLSN, serverWALEnd, output, metrics)
 }
 
 func (decoder *pgoutputDecoder) processMessage(
@@ -390,6 +437,20 @@ func (decoder *pgoutputDecoder) processMessage(
 	output sink,
 	metrics *metrics,
 ) (pglogrepl.LSN, []string, error) {
+	return decoder.processMessageWithServerWALEnd(ctx, message, messageLSN, 0, output, metrics)
+}
+
+func (decoder *pgoutputDecoder) processMessageWithServerWALEnd(
+	ctx context.Context,
+	message pglogrepl.Message,
+	messageLSN pglogrepl.LSN,
+	serverWALEnd pglogrepl.LSN,
+	output sink,
+	metrics *metrics,
+) (pglogrepl.LSN, []string, error) {
+	if decoder.audit != nil {
+		decoder.audit.logMessage(ctx, message, messageLSN, serverWALEnd, decoder.currentTransactionID())
+	}
 	switch message := message.(type) {
 	case *pglogrepl.BeginMessage:
 		if decoder.tx != nil {
@@ -402,7 +463,32 @@ func (decoder *pgoutputDecoder) processMessage(
 		metrics.transactionsReceived.Add(1)
 		log.Printf("BEGIN xid=%d lsn=%s", message.Xid, message.FinalLSN)
 	case *pglogrepl.RelationMessage:
+		if metrics != nil {
+			metrics.schemaMetadataRelationMessages.Add(1)
+		}
+		var xid uint32
+		schemaLSN := messageLSN
+		if decoder.tx != nil {
+			xid = decoder.tx.id
+			if schemaLSN == 0 {
+				schemaLSN = decoder.tx.beginLSN
+			}
+		}
+		changes, err := decoder.schema.observeRelation(message, schemaLSN, xid)
+		if err != nil {
+			return 0, nil, fmt.Errorf("observar metadata da relacao: %w", err)
+		}
 		decoder.relations[message.RelationID] = message
+		if len(changes) > 0 {
+			logSchemaChanges(decoder.sourceID, changes, metrics)
+		}
+		table := qualifiedTable{schema: message.Namespace, name: message.RelationName}
+		if decoder.validator != nil && decoder.validator.ShouldValidate(table) {
+			result := decoder.validator.Validate(ctx, table, schemaLSN, xid)
+			if decoder.tx != nil {
+				decoder.tx.schemaValidations = append(decoder.tx.schemaValidations, result)
+			}
+		}
 		log.Printf("RELATION id=%d table=%s.%s", message.RelationID, message.Namespace, message.RelationName)
 	case *pglogrepl.InsertMessage:
 		event, err := decoder.eventFromTuple(eventInsert, message.RelationID, message.Tuple, nil, messageLSN)
@@ -423,7 +509,7 @@ func (decoder *pgoutputDecoder) processMessage(
 		}
 		metrics.eventsReceived.Add(1)
 	case *pglogrepl.DeleteMessage:
-		event, err := decoder.eventFromTuple(eventDelete, message.RelationID, nil, message.OldTuple, messageLSN)
+		event, err := decoder.eventFromTuple(eventDelete, message.RelationID, message.OldTuple, nil, messageLSN)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -447,12 +533,68 @@ func (decoder *pgoutputDecoder) processMessage(
 	return 0, nil, nil
 }
 
+func (decoder *pgoutputDecoder) currentTransactionID() uint32 {
+	if decoder.tx == nil {
+		return 0
+	}
+	return decoder.tx.id
+}
+
 func (decoder *pgoutputDecoder) appendEvent(event event) error {
 	if decoder.tx == nil {
 		return fmt.Errorf("evento %s recebido sem transacao ativa", event.Type)
 	}
 	event.TransactionID = decoder.tx.id
+	if err := validateChangeEvent(event); err != nil {
+		return err
+	}
 	decoder.tx.events = append(decoder.tx.events, event)
+	return nil
+}
+
+func validateChangeEvent(event event) error {
+	if event.LSN == "" {
+		return fmt.Errorf("evento %s sem lsn", event.Type)
+	}
+	if _, err := pglogrepl.ParseLSN(event.LSN); err != nil {
+		return fmt.Errorf("evento %s com lsn invalido %q: %w", event.Type, event.LSN, err)
+	}
+	if event.TransactionID == 0 {
+		return fmt.Errorf("evento %s sem transaction_id", event.Type)
+	}
+	if event.Schema == "" {
+		return fmt.Errorf("evento %s sem schema", event.Type)
+	}
+	if event.Table == "" {
+		return fmt.Errorf("evento %s sem table", event.Type)
+	}
+
+	switch event.Type {
+	case eventInsert:
+		if event.Data == nil {
+			return fmt.Errorf("evento INSERT sem data")
+		}
+		if event.OldData != nil {
+			return fmt.Errorf("evento INSERT nao deve possuir old_data")
+		}
+	case eventUpdate:
+		if event.Data == nil {
+			return fmt.Errorf("evento UPDATE sem data")
+		}
+		if event.OldData == nil {
+			return fmt.Errorf("evento UPDATE sem old_data; configure REPLICA IDENTITY FULL na tabela source")
+		}
+	case eventDelete:
+		if event.Data == nil {
+			return fmt.Errorf("evento DELETE sem data; configure REPLICA IDENTITY FULL na tabela source")
+		}
+		if event.OldData != nil {
+			return fmt.Errorf("evento DELETE nao deve possuir old_data")
+		}
+	default:
+		return fmt.Errorf("tipo de evento nao suportado: %q", event.Type)
+	}
+
 	return nil
 }
 
@@ -465,10 +607,13 @@ func (decoder *pgoutputDecoder) commit(ctx context.Context, message *pglogrepl.C
 	}()
 
 	sourceTx := sourceTransaction{
-		sourceID:      decoder.sourceID,
-		commitLSN:     message.TransactionEndLSN,
-		transactionID: decoder.tx.id,
-		events:        append([]event(nil), decoder.tx.events...),
+		sourceID:          decoder.sourceID,
+		commitLSN:         message.TransactionEndLSN,
+		transactionID:     decoder.tx.id,
+		schemaValidations: append([]schemaValidationResult(nil), decoder.tx.schemaValidations...),
+		schemaChanges:     append([]schemaChange(nil), decoder.tx.schemaChanges...),
+		events:            append([]event(nil), decoder.tx.events...),
+		metrics:           metrics,
 	}
 	persisted, err := output.ApplyTransaction(ctx, sourceTx)
 	if err != nil {
@@ -616,8 +761,9 @@ func openSink(ctx context.Context, cfg appConfig) (sink, error) {
 		return newFileSink(cfg.outputFileName)
 	case "postgres":
 		return newPostgresSinkWithOptions(ctx, cfg.destConfig, cfg.sourceID, postgresSinkOptions{
-			applyMode:      cfg.postgresApplyMode,
-			includedTables: cfg.includedTables,
+			applyMode:       cfg.postgresApplyMode,
+			schemaEvolution: cfg.schemaEvolution,
+			includedTables:  cfg.includedTables,
 		})
 	default:
 		return nil, fmt.Errorf("sink nao suportado: %s", cfg.sinkName)

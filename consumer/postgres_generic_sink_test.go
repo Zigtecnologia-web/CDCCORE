@@ -81,7 +81,7 @@ func TestGenericPostgresSinkAppliesUnmappedTable(t *testing.T) {
 		sourceID: sourceID, commitLSN: pglogrepl.LSN(0x503), transactionID: 3,
 		events: []event{{
 			Type: eventDelete, Schema: "public", Table: tableName, Columns: columns,
-			OldData: map[string]any{"tenant_id": int64(7), "id": int64(11)},
+			Data: map[string]any{"tenant_id": int64(7), "id": int64(11)},
 		}},
 	}); err != nil {
 		t.Fatalf("aplicar delete generico: %v", err)
