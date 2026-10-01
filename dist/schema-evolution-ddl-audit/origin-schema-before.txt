@@ -1,0 +1,20 @@
+                                            Table "public.clientes"
+         Column          |         Type          | Collation | Nullable |               Default                
+-------------------------+-----------------------+-----------+----------+--------------------------------------
+ id                      | bigint                |           | not null | nextval('clientes_id_seq'::regclass)
+ nome                    | text                  |           | not null | 
+ email                   | text                  |           |          | 
+ telefone                | text                  |           |          | 
+ cpf                     | character varying(14) |           |          | 
+ idade                   | integer               |           |          | 
+ spec20_score_1790824363 | integer               |           |          | 
+ teste_metricas          | integer               |           |          | 
+ teste_metricas_2        | integer               |           |          | 
+ teste_metricas_3        | integer               |           |          | 
+Indexes:
+    "clientes_pkey" PRIMARY KEY, btree (id)
+Referenced by:
+    TABLE "enderecos" CONSTRAINT "enderecos_cliente_id_fkey" FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE
+Publications:
+    "cdc_publication"
+

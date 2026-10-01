@@ -1,0 +1,66 @@
+# HELP cdc_events_total Total de eventos CDC aplicados com sucesso.
+# TYPE cdc_events_total counter
+cdc_events_total 15
+
+# HELP cdc_events_received_total Total de eventos CDC recebidos da origem.
+# TYPE cdc_events_received_total counter
+cdc_events_received_total 15
+
+# HELP cdc_transactions_total Total de transacoes CDC confirmadas no destino.
+# TYPE cdc_transactions_total counter
+cdc_transactions_total 15
+
+# HELP cdc_transactions_received_total Total de transacoes CDC recebidas da origem.
+# TYPE cdc_transactions_received_total counter
+cdc_transactions_received_total 15
+
+# HELP cdc_transactions_failed_total Total de transacoes CDC que falharam.
+# TYPE cdc_transactions_failed_total counter
+cdc_transactions_failed_total 0
+
+# HELP cdc_transactions_redelivered_total Total de transacoes CDC reentregues.
+# TYPE cdc_transactions_redelivered_total counter
+cdc_transactions_redelivered_total 0
+
+# HELP cdc_reconnects_total Total de tentativas de reconexao realizadas.
+# TYPE cdc_reconnects_total counter
+cdc_reconnects_total 0
+
+# HELP cdc_sink_errors_total Total de erros ao gravar no destino.
+# TYPE cdc_sink_errors_total counter
+cdc_sink_errors_total 0
+
+# HELP cdc_schema_metadata_relation_messages_total Total de mensagens de relacao observadas.
+# TYPE cdc_schema_metadata_relation_messages_total counter
+cdc_schema_metadata_relation_messages_total 4
+
+# HELP cdc_schema_metadata_changes_total Total de diferencas de metadata observadas.
+# TYPE cdc_schema_metadata_changes_total counter
+cdc_schema_metadata_changes_total 1
+
+# HELP cdc_schema_metadata_unknown_total Total de diferencas de metadata classificadas como UNKNOWN.
+# TYPE cdc_schema_metadata_unknown_total counter
+cdc_schema_metadata_unknown_total 0
+
+# HELP cdc_schema_apply_attempts_total Total de decisoes de apply de schema avaliadas.
+# TYPE cdc_schema_apply_attempts_total counter
+cdc_schema_apply_attempts_total 1
+
+# HELP cdc_schema_apply_success_total Total de applies de schema confirmados.
+# TYPE cdc_schema_apply_success_total counter
+cdc_schema_apply_success_total 1
+
+# HELP cdc_schema_apply_failure_total Total de falhas durante apply ou revalidacao de schema.
+# TYPE cdc_schema_apply_failure_total counter
+cdc_schema_apply_failure_total 0
+
+# HELP cdc_schema_apply_rejected_total Total de operacoes de schema bloqueadas por modo ou politica.
+# TYPE cdc_schema_apply_rejected_total counter
+cdc_schema_apply_rejected_total 0
+
+# HELP cdc_schema_validation_total Total de validacoes de schema por status de compatibilidade.
+# TYPE cdc_schema_validation_total counter
+cdc_schema_validation_total{status="compatible"} 18
+cdc_schema_validation_total{status="incompatible"} 1
+cdc_schema_validation_total{status="unknown"} 0
+

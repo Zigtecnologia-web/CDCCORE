@@ -1,0 +1,258 @@
+05:00:35 conectado a postgres:5432/cdc_demo como postgres
+05:00:35 iniciando slot "cdc_slot" no LSN confirmado 0/1928FF8
+05:00:35 usando publication "cdc_publication"
+05:00:35 usando sink "/tmp/schema-audit-events.jsonl"
+05:00:35 aguardando eventos; pressione Ctrl+C para encerrar
+05:00:38 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/19B3968","server_wal_end":"0/19B3968","lsn":"0/19B3A68","transaction_id":758,"details":{"commit_time":"2026-09-30T05:00:38.556234Z"}}
+05:00:38 BEGIN xid=758 lsn=0/19B3A68
+05:00:38 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":758,"relation_id":16417,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:00:38 RELATION id=16417 table=public.clientes
+05:00:38 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/19B3968","server_wal_end":"0/19B3968","lsn":"0/19B3968","transaction_id":758,"relation_id":16417,"details":{"tuple_columns":3}}
+05:00:38 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/19B3A98","server_wal_end":"0/19B3A98","lsn":"0/19B3A98","transaction_id":758,"details":{"commit_lsn":"0/19B3A68","commit_time":"2026-09-30T05:00:38.556234Z","transaction_end_lsn":"0/19B3A98"}}
+05:00:38 level=info event=transaction_committed source_id=cdc-demo xid=758 commit_lsn=0/19B3A98 eventos=1
+{"type":"INSERT","lsn":"0/19B3968","transaction_id":758,"schema":"public","table":"clientes","data":{"email":"e1-insert@example.com","id":1,"nome":"E1 Insert"}}
+05:00:39 level=debug event=ack_sent confirmed_lsn=0/19B3A98
+05:00:41 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/19B3B48","server_wal_end":"0/19B3B48","lsn":"0/19B3BE0","transaction_id":759,"details":{"commit_time":"2026-09-30T05:00:41.95114Z"}}
+05:00:41 BEGIN xid=759 lsn=0/19B3BE0
+05:00:41 level=info {"event":"schema_evolution_audit","message_type":"UPDATE","wal_start":"0/19B3B48","server_wal_end":"0/19B3B48","lsn":"0/19B3B48","transaction_id":759,"relation_id":16417,"details":{"new_tuple_columns":3,"old_tuple_columns":3}}
+05:00:41 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/19B3C10","server_wal_end":"0/19B3C10","lsn":"0/19B3C10","transaction_id":759,"details":{"commit_lsn":"0/19B3BE0","commit_time":"2026-09-30T05:00:41.95114Z","transaction_end_lsn":"0/19B3C10"}}
+{"type":"UPDATE","lsn":"0/19B3B48","transaction_id":759,"schema":"public","table":"clientes","data":{"email":"e1-insert@example.com","id":1,"nome":"E1 Update"},"old_data":{"email":"e1-insert@example.com","id":1,"nome":"E1 Insert"}}
+05:00:41 level=info event=transaction_committed source_id=cdc-demo xid=759 commit_lsn=0/19B3C10 eventos=1
+05:00:42 level=debug event=ack_sent confirmed_lsn=0/19B3C10
+05:00:45 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/19B3C10","server_wal_end":"0/19B3C10","lsn":"0/19B3C78","transaction_id":760,"details":{"commit_time":"2026-09-30T05:00:45.340526Z"}}
+05:00:45 BEGIN xid=760 lsn=0/19B3C78
+05:00:45 level=info {"event":"schema_evolution_audit","message_type":"DELETE","wal_start":"0/19B3C10","server_wal_end":"0/19B3C10","lsn":"0/19B3C10","transaction_id":760,"relation_id":16417,"details":{"old_tuple_columns":3}}
+{"type":"DELETE","lsn":"0/19B3C10","transaction_id":760,"schema":"public","table":"clientes","data":{"email":"e1-insert@example.com","id":1,"nome":"E1 Update"}}
+05:00:45 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/19B3CA8","server_wal_end":"0/19B3CA8","lsn":"0/19B3CA8","transaction_id":760,"details":{"commit_lsn":"0/19B3C78","commit_time":"2026-09-30T05:00:45.340526Z","transaction_end_lsn":"0/19B3CA8"}}
+05:00:45 level=info event=transaction_committed source_id=cdc-demo xid=760 commit_lsn=0/19B3CA8 eventos=1
+05:00:46 level=debug event=ack_sent confirmed_lsn=0/19B3CA8
+05:01:01 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/19B40A8","server_wal_end":"0/19B40A8","lsn":"0/19B4148","transaction_id":762,"details":{"commit_time":"2026-09-30T05:01:01.038546Z"}}
+05:01:01 BEGIN xid=762 lsn=0/19B4148
+05:01:01 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":762,"relation_id":16417,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"telefone","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true},{"name":"telefone","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:01:01 level=info event=schema_change_detected mode=detect_only schema=public table=clientes operation=ADD_COLUMN transaction_id=762 lsn=0/19B4148 column=telefone details={"column":"telefone","data_type_oid":25,"type_modifier":-1}
+05:01:01 RELATION id=16417 table=public.clientes
+05:01:01 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/19B40A8","server_wal_end":"0/19B40A8","lsn":"0/19B40A8","transaction_id":762,"relation_id":16417,"details":{"tuple_columns":4}}
+05:01:01 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/19B4178","server_wal_end":"0/19B4178","lsn":"0/19B4178","transaction_id":762,"details":{"commit_lsn":"0/19B4148","commit_time":"2026-09-30T05:01:01.038546Z","transaction_end_lsn":"0/19B4178"}}
+{"type":"INSERT","lsn":"0/19B40A8","transaction_id":762,"schema":"public","table":"clientes","data":{"email":"e2@example.com","id":2,"nome":"E2 Add","telefone":"999999999"}}
+05:01:01 level=info event=transaction_committed source_id=cdc-demo xid=762 commit_lsn=0/19B4178 eventos=1
+05:01:01 level=debug event=ack_sent confirmed_lsn=0/19B4178
+05:01:13 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/19C0350","server_wal_end":"0/19C0350","lsn":"0/19C0458","transaction_id":764,"details":{"commit_time":"2026-09-30T05:01:13.301737Z"}}
+05:01:13 BEGIN xid=764 lsn=0/19C0458
+05:01:13 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":764,"relation_id":16428,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"telefone","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true},{"name":"telefone","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:01:13 RELATION id=16428 table=public.clientes
+05:01:13 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/19C0350","server_wal_end":"0/19C0350","lsn":"0/19C0350","transaction_id":764,"relation_id":16428,"details":{"tuple_columns":4}}
+05:01:13 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/19C04E0","server_wal_end":"0/19C04E0","lsn":"0/19C04E0","transaction_id":764,"details":{"commit_lsn":"0/19C0458","commit_time":"2026-09-30T05:01:13.301737Z","transaction_end_lsn":"0/19C04E0"}}
+05:01:13 level=info event=transaction_committed source_id=cdc-demo xid=764 commit_lsn=0/19C04E0 eventos=1
+{"type":"INSERT","lsn":"0/19C0350","transaction_id":764,"schema":"public","table":"clientes","data":{"email":"e3@example.com","id":1,"nome":"E3 Same TX","telefone":"999999999"}}
+05:01:13 level=debug event=ack_sent confirmed_lsn=0/19C04E0
+05:01:29 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/19CE480","server_wal_end":"0/19CE480","lsn":"0/19CE588","transaction_id":767,"details":{"commit_time":"2026-09-30T05:01:29.954938Z"}}
+05:01:29 BEGIN xid=767 lsn=0/19CE588
+05:01:29 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":767,"relation_id":16439,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"telefone","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true},{"name":"telefone","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:01:29 RELATION id=16439 table=public.clientes
+05:01:29 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/19CE480","server_wal_end":"0/19CE480","lsn":"0/19CE480","transaction_id":767,"relation_id":16439,"details":{"tuple_columns":4}}
+05:01:29 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/19CE5B8","server_wal_end":"0/19CE5B8","lsn":"0/19CE5B8","transaction_id":767,"details":{"commit_lsn":"0/19CE588","commit_time":"2026-09-30T05:01:29.954938Z","transaction_end_lsn":"0/19CE5B8"}}
+{"type":"INSERT","lsn":"0/19CE480","transaction_id":767,"schema":"public","table":"clientes","data":{"email":"e4@example.com","id":1,"nome":"E4 Separate","telefone":"999999999"}}
+05:01:29 level=info event=transaction_committed source_id=cdc-demo xid=767 commit_lsn=0/19CE5B8 eventos=1
+05:01:30 level=debug event=ack_sent confirmed_lsn=0/19CE5B8
+05:01:38 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/19CE910","server_wal_end":"0/19CE910","lsn":"0/19CE9A8","transaction_id":769,"details":{"commit_time":"2026-09-30T05:01:38.870154Z"}}
+05:01:38 BEGIN xid=769 lsn=0/19CE9A8
+05:01:38 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":769,"relation_id":16439,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:01:38 level=info event=schema_change_detected mode=detect_only schema=public table=clientes operation=DROP_COLUMN transaction_id=769 lsn=0/19CE9A8 column=telefone details={"column":"telefone"}
+05:01:38 RELATION id=16439 table=public.clientes
+05:01:38 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/19CE910","server_wal_end":"0/19CE910","lsn":"0/19CE910","transaction_id":769,"relation_id":16439,"details":{"tuple_columns":3}}
+05:01:38 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/19CE9D8","server_wal_end":"0/19CE9D8","lsn":"0/19CE9D8","transaction_id":769,"details":{"commit_lsn":"0/19CE9A8","commit_time":"2026-09-30T05:01:38.870154Z","transaction_end_lsn":"0/19CE9D8"}}
+05:01:38 level=info event=transaction_committed source_id=cdc-demo xid=769 commit_lsn=0/19CE9D8 eventos=1
+{"type":"INSERT","lsn":"0/19CE910","transaction_id":769,"schema":"public","table":"clientes","data":{"email":"e5@example.com","id":2,"nome":"E5 Drop"}}
+05:01:39 level=debug event=ack_sent confirmed_lsn=0/19CE9D8
+05:01:55 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/19DFBA8","server_wal_end":"0/19DFBA8","lsn":"0/19DFCA0","transaction_id":772,"details":{"commit_time":"2026-09-30T05:01:55.9802Z"}}
+05:01:55 BEGIN xid=772 lsn=0/19DFCA0
+05:01:55 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":772,"relation_id":16450,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome_completo","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome_completo","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:01:55 level=info event=schema_change_detected mode=detect_only schema=public table=clientes operation=UNKNOWN transaction_id=772 lsn=0/19DFCA0 column= details={"added_columns":["nome_completo"],"reason":"columns_added_and_removed","removed_columns":["nome"]}
+05:01:55 RELATION id=16450 table=public.clientes
+05:01:55 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/19DFBA8","server_wal_end":"0/19DFBA8","lsn":"0/19DFBA8","transaction_id":772,"relation_id":16450,"details":{"tuple_columns":3}}
+{"type":"INSERT","lsn":"0/19DFBA8","transaction_id":772,"schema":"public","table":"clientes","data":{"email":"e6@example.com","id":1,"nome_completo":"E6 Rename"}}
+05:01:55 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/19DFCD0","server_wal_end":"0/19DFCD0","lsn":"0/19DFCD0","transaction_id":772,"details":{"commit_lsn":"0/19DFCA0","commit_time":"2026-09-30T05:01:55.9802Z","transaction_end_lsn":"0/19DFCD0"}}
+05:01:55 level=info event=transaction_committed source_id=cdc-demo xid=772 commit_lsn=0/19DFCD0 eventos=1
+05:01:56 level=debug event=ack_sent confirmed_lsn=0/19DFCD0
+05:02:11 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/19F3C08","server_wal_end":"0/19F3C08","lsn":"0/19F3D40","transaction_id":775,"details":{"commit_time":"2026-09-30T05:02:11.715332Z"}}
+05:02:11 BEGIN xid=775 lsn=0/19F3D40
+05:02:11 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":775,"relation_id":16461,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":1043,"type_modifier":204,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":1043,"data_type":"character varying(200)","type_modifier":204},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:02:11 level=info event=schema_change_detected mode=detect_only schema=public table=clientes operation=UNKNOWN transaction_id=775 lsn=0/19F3D40 column= details={"added_columns":["nome"],"reason":"columns_added_and_removed","removed_columns":["nome_completo"]}
+05:02:11 RELATION id=16461 table=public.clientes
+05:02:11 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/19F3C08","server_wal_end":"0/19F3C08","lsn":"0/19F3C08","transaction_id":775,"relation_id":16461,"details":{"tuple_columns":3}}
+05:02:11 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/19F3D70","server_wal_end":"0/19F3D70","lsn":"0/19F3D70","transaction_id":775,"details":{"commit_lsn":"0/19F3D40","commit_time":"2026-09-30T05:02:11.715332Z","transaction_end_lsn":"0/19F3D70"}}
+{"type":"INSERT","lsn":"0/19F3C08","transaction_id":775,"schema":"public","table":"clientes","data":{"email":"e7@example.com","id":1,"nome":"E7 Alter Type"}}
+05:02:11 level=info event=transaction_committed source_id=cdc-demo xid=775 commit_lsn=0/19F3D70 eventos=1
+05:02:12 level=debug event=ack_sent confirmed_lsn=0/19F3D70
+05:02:28 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/19FDAD8","server_wal_end":"0/19FDAD8","lsn":"0/19FDBD8","transaction_id":778,"details":{"commit_time":"2026-09-30T05:02:28.120293Z"}}
+05:02:28 BEGIN xid=778 lsn=0/19FDBD8
+05:02:28 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":778,"relation_id":16478,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1}],"catalog_read_status":"OK"}
+05:02:28 level=info event=schema_change_detected mode=detect_only schema=public table=clientes operation=ALTER_TYPE transaction_id=778 lsn=0/19FDBD8 column=nome details={"column":"nome","current_data_type_oid":25,"current_type_modifier":-1,"previous_data_type_oid":1043,"previous_type_modifier":204}
+05:02:28 RELATION id=16478 table=public.clientes
+05:02:28 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/19FDAD8","server_wal_end":"0/19FDAD8","lsn":"0/19FDAD8","transaction_id":778,"relation_id":16478,"details":{"tuple_columns":3}}
+05:02:28 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/19FDC08","server_wal_end":"0/19FDC08","lsn":"0/19FDC08","transaction_id":778,"details":{"commit_lsn":"0/19FDBD8","commit_time":"2026-09-30T05:02:28.120293Z","transaction_end_lsn":"0/19FDC08"}}
+{"type":"INSERT","lsn":"0/19FDAD8","transaction_id":778,"schema":"public","table":"clientes","data":{"email":"e8@example.com","id":1,"nome":"E8 Not Null"}}
+05:02:28 level=info event=transaction_committed source_id=cdc-demo xid=778 commit_lsn=0/19FDC08 eventos=1
+05:02:28 level=debug event=ack_sent confirmed_lsn=0/19FDC08
+05:02:43 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A31088","server_wal_end":"0/1A31088","lsn":"0/1A311B0","transaction_id":784,"details":{"commit_time":"2026-09-30T05:02:43.819244Z"}}
+05:02:43 BEGIN xid=784 lsn=0/1A311B0
+05:02:43 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":784,"relation_id":16489,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true,"has_default":true}],"catalog_read_status":"OK"}
+05:02:43 RELATION id=16489 table=public.clientes
+05:02:43 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A31088","server_wal_end":"0/1A31088","lsn":"0/1A31088","transaction_id":784,"relation_id":16489,"details":{"tuple_columns":3}}
+05:02:43 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A311E0","server_wal_end":"0/1A311E0","lsn":"0/1A311E0","transaction_id":784,"details":{"commit_lsn":"0/1A311B0","commit_time":"2026-09-30T05:02:43.819244Z","transaction_end_lsn":"0/1A311E0"}}
+{"type":"INSERT","lsn":"0/1A31088","transaction_id":784,"schema":"public","table":"clientes","data":{"email":"","id":1,"nome":"E9 Default"}}
+05:02:43 level=info event=transaction_committed source_id=cdc-demo xid=784 commit_lsn=0/1A311E0 eventos=1
+05:02:43 level=debug event=ack_sent confirmed_lsn=0/1A311E0
+05:02:52 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A37AD8","server_wal_end":"0/1A37AD8","lsn":"0/1A37BC8","transaction_id":786,"details":{"commit_time":"2026-09-30T05:02:52.696888Z"}}
+05:02:52 BEGIN xid=786 lsn=0/1A37BC8
+05:02:52 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":786,"relation_id":16502,"schema":"public","table":"audit_enderecos","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"cliente_id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"cidade","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"cliente_id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"nullable":true},{"name":"cidade","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:02:52 RELATION id=16502 table=public.audit_enderecos
+05:02:52 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A37AD8","server_wal_end":"0/1A37AD8","lsn":"0/1A37AD8","transaction_id":786,"relation_id":16502,"details":{"tuple_columns":3}}
+{"type":"INSERT","lsn":"0/1A37AD8","transaction_id":786,"schema":"public","table":"audit_enderecos","data":{"cidade":"Salvador","cliente_id":1,"id":1}}
+05:02:52 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A37BF8","server_wal_end":"0/1A37BF8","lsn":"0/1A37BF8","transaction_id":786,"details":{"commit_lsn":"0/1A37BC8","commit_time":"2026-09-30T05:02:52.696888Z","transaction_end_lsn":"0/1A37BF8"}}
+05:02:52 level=info event=transaction_committed source_id=cdc-demo xid=786 commit_lsn=0/1A37BF8 eventos=1
+05:02:52 level=debug event=ack_sent confirmed_lsn=0/1A37BF8
+05:03:14 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A447E0","server_wal_end":"0/1A447E0","lsn":"0/1A448E0","transaction_id":790,"details":{"commit_time":"2026-09-30T05:03:14.065073Z"}}
+05:03:14 BEGIN xid=790 lsn=0/1A448E0
+05:03:14 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":790,"relation_id":16512,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"a","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"b","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true},{"name":"a","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true},{"name":"b","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:03:14 level=info event=schema_change_detected mode=detect_only schema=public table=clientes operation=ADD_COLUMN transaction_id=790 lsn=0/1A448E0 column=a details={"column":"a","data_type_oid":25,"type_modifier":-1}
+05:03:14 level=info event=schema_change_detected mode=detect_only schema=public table=clientes operation=ADD_COLUMN transaction_id=790 lsn=0/1A448E0 column=b details={"column":"b","data_type_oid":25,"type_modifier":-1}
+05:03:14 RELATION id=16512 table=public.clientes
+05:03:14 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A447E0","server_wal_end":"0/1A447E0","lsn":"0/1A447E0","transaction_id":790,"relation_id":16512,"details":{"tuple_columns":5}}
+05:03:14 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A44910","server_wal_end":"0/1A44910","lsn":"0/1A44910","transaction_id":790,"details":{"commit_lsn":"0/1A448E0","commit_time":"2026-09-30T05:03:14.065073Z","transaction_end_lsn":"0/1A44910"}}
+05:03:14 level=info event=transaction_committed source_id=cdc-demo xid=790 commit_lsn=0/1A44910 eventos=1
+{"type":"INSERT","lsn":"0/1A447E0","transaction_id":790,"schema":"public","table":"clientes","data":{"a":"a","b":"b","email":"e13@example.com","id":1,"nome":"E13 Fast"}}
+05:03:15 level=debug event=ack_sent confirmed_lsn=0/1A44910
+05:03:26 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A4E878","server_wal_end":"0/1A4E878","lsn":"0/1A4E978","transaction_id":792,"details":{"commit_time":"2026-09-30T05:03:26.330494Z"}}
+05:03:26 BEGIN xid=792 lsn=0/1A4E978
+{"type":"INSERT","lsn":"0/1A4E878","transaction_id":792,"schema":"public","table":"clientes","data":{"a":"a","b":"b","email":"e14@example.com","id":1,"nome":"E14 Same TX"}}
+05:03:26 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":792,"relation_id":16523,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"a","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"b","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true},{"name":"a","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true},{"name":"b","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:03:26 RELATION id=16523 table=public.clientes
+05:03:26 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A4E878","server_wal_end":"0/1A4E878","lsn":"0/1A4E878","transaction_id":792,"relation_id":16523,"details":{"tuple_columns":5}}
+05:03:26 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A4EA50","server_wal_end":"0/1A4EA50","lsn":"0/1A4EA50","transaction_id":792,"details":{"commit_lsn":"0/1A4E978","commit_time":"2026-09-30T05:03:26.330494Z","transaction_end_lsn":"0/1A4EA50"}}
+05:03:26 level=info event=transaction_committed source_id=cdc-demo xid=792 commit_lsn=0/1A4EA50 eventos=1
+05:03:27 level=debug event=ack_sent confirmed_lsn=0/1A4EA50
+05:03:45 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A58808","server_wal_end":"0/1A58808","lsn":"0/1A58908","transaction_id":795,"details":{"commit_time":"2026-09-30T05:03:45.374122Z"}}
+05:03:45 BEGIN xid=795 lsn=0/1A58908
+05:03:45 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":795,"relation_id":16534,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:03:45 level=info event=schema_change_detected mode=detect_only schema=public table=clientes operation=DROP_COLUMN transaction_id=795 lsn=0/1A58908 column=a details={"column":"a"}
+05:03:45 level=info event=schema_change_detected mode=detect_only schema=public table=clientes operation=DROP_COLUMN transaction_id=795 lsn=0/1A58908 column=b details={"column":"b"}
+05:03:45 RELATION id=16534 table=public.clientes
+05:03:45 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A58808","server_wal_end":"0/1A58808","lsn":"0/1A58808","transaction_id":795,"relation_id":16534,"details":{"tuple_columns":3}}
+05:03:45 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A58938","server_wal_end":"0/1A58938","lsn":"0/1A58938","transaction_id":795,"details":{"commit_lsn":"0/1A58908","commit_time":"2026-09-30T05:03:45.374122Z","transaction_end_lsn":"0/1A58938"}}
+{"type":"INSERT","lsn":"0/1A58808","transaction_id":795,"schema":"public","table":"clientes","data":{"email":"e15@example.com","id":1,"nome":"E15 Rollback"}}
+05:03:45 level=info event=transaction_committed source_id=cdc-demo xid=795 commit_lsn=0/1A58938 eventos=1
+05:03:46 level=debug event=ack_sent confirmed_lsn=0/1A58938
+05:03:57 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A62088","server_wal_end":"0/1A62088","lsn":"0/1A621B0","transaction_id":797,"details":{"commit_time":"2026-09-30T05:03:57.600989Z"}}
+05:03:57 BEGIN xid=797 lsn=0/1A621B0
+05:03:57 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":797,"relation_id":16545,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:03:57 RELATION id=16545 table=public.clientes
+05:03:57 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A62088","server_wal_end":"0/1A62088","lsn":"0/1A62088","transaction_id":797,"relation_id":16545,"details":{"tuple_columns":3}}
+05:03:57 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A621E0","server_wal_end":"0/1A621E0","lsn":"0/1A621E0","transaction_id":797,"details":{"commit_lsn":"0/1A621B0","commit_time":"2026-09-30T05:03:57.600989Z","transaction_end_lsn":"0/1A621E0"}}
+05:03:57 level=info event=transaction_committed source_id=cdc-demo xid=797 commit_lsn=0/1A621E0 eventos=1
+{"type":"INSERT","lsn":"0/1A62088","transaction_id":797,"schema":"public","table":"clientes","data":{"email":null,"id":1,"nome":"E16 Null Email"}}
+05:03:58 level=debug event=ack_sent confirmed_lsn=0/1A621E0
+05:04:04 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A62358","server_wal_end":"0/1A62358","lsn":"0/1A623F8","transaction_id":799,"details":{"commit_time":"2026-09-30T05:04:04.49486Z"}}
+05:04:04 BEGIN xid=799 lsn=0/1A623F8
+05:04:04 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A62358","server_wal_end":"0/1A62358","lsn":"0/1A62358","transaction_id":799,"relation_id":16545,"details":{"tuple_columns":3}}
+05:04:04 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A62428","server_wal_end":"0/1A62428","lsn":"0/1A62428","transaction_id":799,"details":{"commit_lsn":"0/1A623F8","commit_time":"2026-09-30T05:04:04.49486Z","transaction_end_lsn":"0/1A62428"}}
+05:04:04 level=info event=transaction_committed source_id=cdc-demo xid=799 commit_lsn=0/1A62428 eventos=1
+{"type":"INSERT","lsn":"0/1A62358","transaction_id":799,"schema":"public","table":"clientes","data":{"email":"e16@example.com","id":2,"nome":"E16 Failed"}}
+05:04:05 level=debug event=ack_sent confirmed_lsn=0/1A62428
+05:04:09 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A62428","server_wal_end":"0/1A62428","lsn":"0/1A624C8","transaction_id":800,"details":{"commit_time":"2026-09-30T05:04:09.958625Z"}}
+05:04:09 BEGIN xid=800 lsn=0/1A624C8
+05:04:09 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A62428","server_wal_end":"0/1A62428","lsn":"0/1A62428","transaction_id":800,"relation_id":16545,"details":{"tuple_columns":3}}
+05:04:09 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A624F8","server_wal_end":"0/1A624F8","lsn":"0/1A624F8","transaction_id":800,"details":{"commit_lsn":"0/1A624C8","commit_time":"2026-09-30T05:04:09.958625Z","transaction_end_lsn":"0/1A624F8"}}
+05:04:09 level=info event=transaction_committed source_id=cdc-demo xid=800 commit_lsn=0/1A624F8 eventos=1
+{"type":"INSERT","lsn":"0/1A62428","transaction_id":800,"schema":"public","table":"clientes","data":{"email":"e17a@example.com","id":3,"nome":"E17 First"}}
+05:04:10 level=debug event=ack_sent confirmed_lsn=0/1A624F8
+05:04:13 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A624F8","server_wal_end":"0/1A624F8","lsn":"0/1A62598","transaction_id":801,"details":{"commit_time":"2026-09-30T05:04:13.448177Z"}}
+05:04:13 BEGIN xid=801 lsn=0/1A62598
+05:04:13 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A624F8","server_wal_end":"0/1A624F8","lsn":"0/1A624F8","transaction_id":801,"relation_id":16545,"details":{"tuple_columns":3}}
+05:04:13 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A625C8","server_wal_end":"0/1A625C8","lsn":"0/1A625C8","transaction_id":801,"details":{"commit_lsn":"0/1A62598","commit_time":"2026-09-30T05:04:13.448177Z","transaction_end_lsn":"0/1A625C8"}}
+{"type":"INSERT","lsn":"0/1A624F8","transaction_id":801,"schema":"public","table":"clientes","data":{"email":"e17b@example.com","id":4,"nome":"E17 Second"}}
+05:04:13 level=info event=transaction_committed source_id=cdc-demo xid=801 commit_lsn=0/1A625C8 eventos=1
+05:04:14 level=debug event=ack_sent confirmed_lsn=0/1A625C8
+05:04:22 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A629E0","server_wal_end":"0/1A629E0","lsn":"0/1A62A80","transaction_id":803,"details":{"commit_time":"2026-09-30T05:04:22.277157Z"}}
+05:04:22 BEGIN xid=803 lsn=0/1A62A80
+05:04:22 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":803,"relation_id":16545,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"telefone","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true},{"name":"telefone","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:04:22 level=info event=schema_change_detected mode=detect_only schema=public table=clientes operation=ADD_COLUMN transaction_id=803 lsn=0/1A62A80 column=telefone details={"column":"telefone","data_type_oid":25,"type_modifier":-1}
+05:04:22 RELATION id=16545 table=public.clientes
+05:04:22 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A629E0","server_wal_end":"0/1A629E0","lsn":"0/1A629E0","transaction_id":803,"relation_id":16545,"details":{"tuple_columns":4}}
+{"type":"INSERT","lsn":"0/1A629E0","transaction_id":803,"schema":"public","table":"clientes","data":{"email":"e19@example.com","id":5,"nome":"E19 Insert","telefone":"111"}}
+05:04:22 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A62AB0","server_wal_end":"0/1A62AB0","lsn":"0/1A62AB0","transaction_id":803,"details":{"commit_lsn":"0/1A62A80","commit_time":"2026-09-30T05:04:22.277157Z","transaction_end_lsn":"0/1A62AB0"}}
+05:04:22 level=info event=transaction_committed source_id=cdc-demo xid=803 commit_lsn=0/1A62AB0 eventos=1
+05:04:22 level=debug event=ack_sent confirmed_lsn=0/1A62AB0
+05:04:25 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A62AB0","server_wal_end":"0/1A62AB0","lsn":"0/1A62B48","transaction_id":804,"details":{"commit_time":"2026-09-30T05:04:25.729297Z"}}
+05:04:25 BEGIN xid=804 lsn=0/1A62B48
+05:04:25 level=info {"event":"schema_evolution_audit","message_type":"UPDATE","wal_start":"0/1A62AB0","server_wal_end":"0/1A62AB0","lsn":"0/1A62AB0","transaction_id":804,"relation_id":16545,"details":{"new_tuple_columns":4,"old_tuple_columns":4}}
+05:04:25 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A62B78","server_wal_end":"0/1A62B78","lsn":"0/1A62B78","transaction_id":804,"details":{"commit_lsn":"0/1A62B48","commit_time":"2026-09-30T05:04:25.729297Z","transaction_end_lsn":"0/1A62B78"}}
+{"type":"UPDATE","lsn":"0/1A62AB0","transaction_id":804,"schema":"public","table":"clientes","data":{"email":"e19@example.com","id":5,"nome":"E19 Insert","telefone":"222"},"old_data":{"email":"e19@example.com","id":5,"nome":"E19 Insert","telefone":"111"}}
+05:04:25 level=info event=transaction_committed source_id=cdc-demo xid=804 commit_lsn=0/1A62B78 eventos=1
+05:04:26 level=debug event=ack_sent confirmed_lsn=0/1A62B78
+05:04:29 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A62B78","server_wal_end":"0/1A62B78","lsn":"0/1A62BE0","transaction_id":805,"details":{"commit_time":"2026-09-30T05:04:29.173125Z"}}
+05:04:29 BEGIN xid=805 lsn=0/1A62BE0
+05:04:29 level=info {"event":"schema_evolution_audit","message_type":"DELETE","wal_start":"0/1A62B78","server_wal_end":"0/1A62B78","lsn":"0/1A62B78","transaction_id":805,"relation_id":16545,"details":{"old_tuple_columns":4}}
+05:04:29 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A62C10","server_wal_end":"0/1A62C10","lsn":"0/1A62C10","transaction_id":805,"details":{"commit_lsn":"0/1A62BE0","commit_time":"2026-09-30T05:04:29.173125Z","transaction_end_lsn":"0/1A62C10"}}
+05:04:29 level=info event=transaction_committed source_id=cdc-demo xid=805 commit_lsn=0/1A62C10 eventos=1
+{"type":"DELETE","lsn":"0/1A62B78","transaction_id":805,"schema":"public","table":"clientes","data":{"email":"e19@example.com","id":5,"nome":"E19 Insert","telefone":"222"}}
+05:04:29 level=debug event=ack_sent confirmed_lsn=0/1A62C10
+05:04:48 conectado a postgres:5432/cdc_demo como postgres
+05:04:48 iniciando slot "cdc_slot" no LSN confirmado 0/1A62C10
+05:04:48 usando publication "cdc_publication"
+05:04:48 usando sink "postgres:generic"
+05:04:48 aguardando eventos; pressione Ctrl+C para encerrar
+05:04:48 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A6D870","server_wal_end":"0/1A6D870","lsn":"0/1A6D978","transaction_id":808,"details":{"commit_time":"2026-09-30T05:04:48.356888Z"}}
+05:04:48 BEGIN xid=808 lsn=0/1A6D978
+05:04:48 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":808,"relation_id":16556,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"telefone","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true},{"name":"telefone","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:04:48 level=warn event=schema_validation schema=public table=clientes status=INCOMPATIBLE difference=COLUMN_MISSING column=telefone transaction_id=808 lsn=0/1A6D978 details={"destination_value":"","reason":"source column is absent in destination","source_value":"text oid=25 typmod=-1 NULL NO DEFAULT"}
+05:04:48 RELATION id=16556 table=public.clientes
+05:04:48 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A6D870","server_wal_end":"0/1A6D870","lsn":"0/1A6D870","transaction_id":808,"relation_id":16556,"details":{"tuple_columns":4}}
+05:04:48 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A6D9A8","server_wal_end":"0/1A6D9A8","lsn":"0/1A6D9A8","transaction_id":808,"details":{"commit_lsn":"0/1A6D978","commit_time":"2026-09-30T05:04:48.356888Z","transaction_end_lsn":"0/1A6D9A8"}}
+05:04:48 level=warn event=retry error="coluna public.clientes.telefone nao existe no destination" attempt=1 delay=1s
+05:04:49 conectado a postgres:5432/cdc_demo como postgres
+05:04:49 iniciando slot "cdc_slot" no LSN confirmado 0/1A62C10
+05:04:49 usando publication "cdc_publication"
+05:04:49 usando sink "postgres:generic"
+05:04:49 aguardando eventos; pressione Ctrl+C para encerrar
+05:04:49 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A6D870","server_wal_end":"0/1A6D870","lsn":"0/1A6D978","transaction_id":808,"details":{"commit_time":"2026-09-30T05:04:48.356888Z"}}
+05:04:49 BEGIN xid=808 lsn=0/1A6D978
+05:04:49 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":808,"relation_id":16556,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"telefone","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true},{"name":"telefone","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:04:49 level=warn event=schema_validation schema=public table=clientes status=INCOMPATIBLE difference=COLUMN_MISSING column=telefone transaction_id=808 lsn=0/1A6D978 details={"destination_value":"","reason":"source column is absent in destination","source_value":"text oid=25 typmod=-1 NULL NO DEFAULT"}
+05:04:49 RELATION id=16556 table=public.clientes
+05:04:49 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A6D870","server_wal_end":"0/1A6D870","lsn":"0/1A6D870","transaction_id":808,"relation_id":16556,"details":{"tuple_columns":4}}
+05:04:49 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A6D9A8","server_wal_end":"0/1A6D9A8","lsn":"0/1A6D9A8","transaction_id":808,"details":{"commit_lsn":"0/1A6D978","commit_time":"2026-09-30T05:04:48.356888Z","transaction_end_lsn":"0/1A6D9A8"}}
+05:04:49 level=warn event=retry error="coluna public.clientes.telefone nao existe no destination" attempt=2 delay=2s
+05:04:51 conectado a postgres:5432/cdc_demo como postgres
+05:04:51 iniciando slot "cdc_slot" no LSN confirmado 0/1A62C10
+05:04:51 usando publication "cdc_publication"
+05:04:51 usando sink "postgres:generic"
+05:04:51 aguardando eventos; pressione Ctrl+C para encerrar
+05:04:51 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A6D870","server_wal_end":"0/1A6D870","lsn":"0/1A6D978","transaction_id":808,"details":{"commit_time":"2026-09-30T05:04:48.356888Z"}}
+05:04:51 BEGIN xid=808 lsn=0/1A6D978
+05:04:51 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":808,"relation_id":16556,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"telefone","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true},{"name":"telefone","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:04:51 level=warn event=schema_validation schema=public table=clientes status=INCOMPATIBLE difference=COLUMN_MISSING column=telefone transaction_id=808 lsn=0/1A6D978 details={"destination_value":"","reason":"source column is absent in destination","source_value":"text oid=25 typmod=-1 NULL NO DEFAULT"}
+05:04:51 RELATION id=16556 table=public.clientes
+05:04:51 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A6D870","server_wal_end":"0/1A6D870","lsn":"0/1A6D870","transaction_id":808,"relation_id":16556,"details":{"tuple_columns":4}}
+05:04:51 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A6D9A8","server_wal_end":"0/1A6D9A8","lsn":"0/1A6D9A8","transaction_id":808,"details":{"commit_lsn":"0/1A6D978","commit_time":"2026-09-30T05:04:48.356888Z","transaction_end_lsn":"0/1A6D9A8"}}
+05:04:51 level=warn event=retry error="coluna public.clientes.telefone nao existe no destination" attempt=3 delay=4s
+05:05:03 conectado a postgres:5432/cdc_demo como postgres
+05:05:03 iniciando slot "cdc_slot" no LSN confirmado 0/1A62C10
+05:05:03 usando publication "cdc_publication"
+05:05:03 usando sink "/tmp/schema-audit-events.jsonl"
+05:05:03 aguardando eventos; pressione Ctrl+C para encerrar
+05:05:03 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A6D870","server_wal_end":"0/1A6D870","lsn":"0/1A6D978","transaction_id":808,"details":{"commit_time":"2026-09-30T05:04:48.356888Z"}}
+05:05:03 BEGIN xid=808 lsn=0/1A6D978
+05:05:03 level=info {"event":"schema_evolution_audit","message_type":"RELATION","wal_start":"0/0","server_wal_end":"0/0","lsn":"0/0","transaction_id":808,"relation_id":16556,"schema":"public","table":"clientes","replica_identity":102,"columns":[{"name":"id","data_type_oid":20,"type_modifier":-1,"key":true},{"name":"nome","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"email","data_type_oid":25,"type_modifier":-1,"key":true},{"name":"telefone","data_type_oid":25,"type_modifier":-1,"key":true}],"catalog_columns":[{"name":"id","data_type_oid":20,"data_type":"bigint","type_modifier":-1,"has_default":true},{"name":"nome","data_type_oid":25,"data_type":"text","type_modifier":-1},{"name":"email","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true},{"name":"telefone","data_type_oid":25,"data_type":"text","type_modifier":-1,"nullable":true}],"catalog_read_status":"OK"}
+05:05:03 RELATION id=16556 table=public.clientes
+{"type":"INSERT","lsn":"0/1A6D870","transaction_id":808,"schema":"public","table":"clientes","data":{"email":"e20@example.com","id":1,"nome":"E20 Sink Fail","telefone":"333"}}
+05:05:03 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A6D870","server_wal_end":"0/1A6D870","lsn":"0/1A6D870","transaction_id":808,"relation_id":16556,"details":{"tuple_columns":4}}
+05:05:03 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A6D9A8","server_wal_end":"0/1A6D9A8","lsn":"0/1A6D9A8","transaction_id":808,"details":{"commit_lsn":"0/1A6D978","commit_time":"2026-09-30T05:04:48.356888Z","transaction_end_lsn":"0/1A6D9A8"}}
+05:05:03 level=info event=transaction_committed source_id=cdc-demo xid=808 commit_lsn=0/1A6D9A8 eventos=1
+05:05:03 level=info {"event":"schema_evolution_audit","message_type":"BEGIN","wal_start":"0/1A6DB58","server_wal_end":"0/1A6DB58","lsn":"0/1A6DD00","transaction_id":809,"details":{"commit_time":"2026-09-30T05:05:03.624915Z"}}
+{"type":"INSERT","lsn":"0/1A6DB58","transaction_id":809,"schema":"public","table":"clientes","data":{"email":"e21@example.com","id":2,"nome":"E21 Manual Apply","telefone":"444"}}
+05:05:03 BEGIN xid=809 lsn=0/1A6DD00
+05:05:03 level=info {"event":"schema_evolution_audit","message_type":"INSERT","wal_start":"0/1A6DB58","server_wal_end":"0/1A6DB58","lsn":"0/1A6DB58","transaction_id":809,"relation_id":16556,"details":{"tuple_columns":4}}
+05:05:03 level=info {"event":"schema_evolution_audit","message_type":"COMMIT","wal_start":"0/1A6DD30","server_wal_end":"0/1A6DD30","lsn":"0/1A6DD30","transaction_id":809,"details":{"commit_lsn":"0/1A6DD00","commit_time":"2026-09-30T05:05:03.624915Z","transaction_end_lsn":"0/1A6DD30"}}
+05:05:03 level=info event=transaction_committed source_id=cdc-demo xid=809 commit_lsn=0/1A6DD30 eventos=1
+05:05:04 level=debug event=ack_sent confirmed_lsn=0/1A6DD30

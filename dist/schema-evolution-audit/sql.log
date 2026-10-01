@@ -1,0 +1,522 @@
+
+## RESET DOCKER ENVIRONMENT
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [consumer internal] load build definition from Dockerfile
+#1 transferring dockerfile: 586B 0.0s done
+#1 DONE 0.0s
+
+#2 [consumer internal] load metadata for docker.io/library/alpine:3.22
+#2 ...
+
+#3 [consumer internal] load metadata for docker.io/library/golang:1.25-alpine
+#3 DONE 5.2s
+
+#2 [consumer internal] load metadata for docker.io/library/alpine:3.22
+#2 DONE 5.4s
+
+#4 [consumer internal] load .dockerignore
+#4 transferring context: 119B done
+#4 DONE 0.0s
+
+#5 [consumer build 1/6] FROM docker.io/library/golang:1.25-alpine@sha256:1ae0735f00daffa3aaf1363a5184c0d2dc55c78e3db4ec70241cdac97bf84b59
+#5 DONE 0.0s
+
+#6 [consumer stage-1 1/4] FROM docker.io/library/alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
+#6 DONE 0.0s
+
+#7 [consumer internal] load build context
+#7 transferring context: 173.59kB 0.0s done
+#7 DONE 0.0s
+
+#8 [consumer build 2/6] WORKDIR /src
+#8 CACHED
+
+#9 [consumer build 3/6] COPY go.mod go.sum ./
+#9 CACHED
+
+#10 [consumer build 4/6] RUN go mod download
+#10 CACHED
+
+#11 [consumer build 5/6] COPY . .
+#11 DONE 0.0s
+
+#12 [consumer build 6/6] RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/cdc-consumer .
+#12 DONE 15.8s
+
+#13 [consumer stage-1 2/4] RUN apk add --no-cache ca-certificates wget
+#13 CACHED
+
+#14 [consumer stage-1 3/4] WORKDIR /app
+#14 CACHED
+
+#15 [consumer stage-1 4/4] COPY --from=build /out/cdc-consumer /usr/local/bin/cdc-consumer
+#15 DONE 0.0s
+
+#16 [consumer] exporting to image
+#16 exporting layers 0.0s done
+#16 writing image sha256:2736adc0c1f29ee302c33810925f64b81a1ae5145b03bccfd8c65cded942bce5 done
+#16 naming to docker.io/library/cdc-postgres-consumer done
+#16 DONE 0.0s
+
+#17 [consumer] resolving provenance for metadata file
+#17 DONE 0.0s
+
+-- source
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGSERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL; DROP PUBLICATION IF EXISTS cdc_publication; CREATE PUBLICATION cdc_publication FOR TABLE public.clientes;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+DROP PUBLICATION
+CREATE PUBLICATION
+
+-- target
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGINT PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+
+## VERSIONS
+
+-- source
+SHOW server_version; SHOW wal_level;
+         server_version          
+---------------------------------
+ 17.11 (Debian 17.11-1.pgdg13+2)
+(1 row)
+
+ wal_level 
+-----------
+ logical
+(1 row)
+
+go version go1.27.1 darwin/arm64
+github.com/jackc/pgx/v5 v5.11.0
+github.com/jackc/pglogrepl v0.0.0-20260824121319-4ae5c490f7ce
+
+## E1 BASELINE DML
+
+-- source
+INSERT INTO public.clientes (nome, email) VALUES ('E1 Insert', 'e1-insert@example.com');
+INSERT 0 1
+
+-- source
+UPDATE public.clientes SET nome = 'E1 Update' WHERE email = 'e1-insert@example.com';
+UPDATE 1
+
+-- source
+DELETE FROM public.clientes WHERE email = 'e1-insert@example.com';
+DELETE 1
+
+## E2 ADD COLUMN THEN DML
+
+## CATALOG before add column
+
+-- source
+SELECT attnum, attname, format_type(atttypid, atttypmod) AS type, attnotnull, atthasdef FROM pg_attribute WHERE attrelid = 'public.clientes'::regclass AND attnum > 0 AND NOT attisdropped ORDER BY attnum;
+ attnum | attname |  type  | attnotnull | atthasdef 
+--------+---------+--------+------------+-----------
+      1 | id      | bigint | t          | t
+      2 | nome    | text   | t          | f
+      3 | email   | text   | f          | f
+(3 rows)
+
+
+-- source
+ALTER TABLE public.clientes ADD COLUMN telefone TEXT;
+ALTER TABLE
+
+## CATALOG after add column before DML
+
+-- source
+SELECT attnum, attname, format_type(atttypid, atttypmod) AS type, attnotnull, atthasdef FROM pg_attribute WHERE attrelid = 'public.clientes'::regclass AND attnum > 0 AND NOT attisdropped ORDER BY attnum;
+ attnum | attname  |  type  | attnotnull | atthasdef 
+--------+----------+--------+------------+-----------
+      1 | id       | bigint | t          | t
+      2 | nome     | text   | t          | f
+      3 | email    | text   | f          | f
+      4 | telefone | text   | f          | f
+(4 rows)
+
+
+-- source
+INSERT INTO public.clientes (nome, email, telefone) VALUES ('E2 Add', 'e2@example.com', '999999999');
+INSERT 0 1
+
+## E3 ADD COLUMN + DML SAME TRANSACTION
+
+-- source
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGSERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL; DROP PUBLICATION IF EXISTS cdc_publication; CREATE PUBLICATION cdc_publication FOR TABLE public.clientes;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+DROP PUBLICATION
+CREATE PUBLICATION
+
+-- target
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGINT PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+
+-- source
+BEGIN; ALTER TABLE public.clientes ADD COLUMN telefone TEXT; INSERT INTO public.clientes (nome, email, telefone) VALUES ('E3 Same TX', 'e3@example.com', '999999999'); COMMIT;
+BEGIN
+ALTER TABLE
+INSERT 0 1
+COMMIT
+
+## E4 DDL SEPARATE FROM DML
+
+-- source
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGSERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL; DROP PUBLICATION IF EXISTS cdc_publication; CREATE PUBLICATION cdc_publication FOR TABLE public.clientes;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+DROP PUBLICATION
+CREATE PUBLICATION
+
+-- target
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGINT PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+
+-- source
+ALTER TABLE public.clientes ADD COLUMN telefone TEXT;
+ALTER TABLE
+
+-- source
+INSERT INTO public.clientes (nome, email, telefone) VALUES ('E4 Separate', 'e4@example.com', '999999999');
+INSERT 0 1
+
+## E5 DROP COLUMN
+
+-- source
+ALTER TABLE public.clientes DROP COLUMN telefone;
+ALTER TABLE
+
+-- source
+INSERT INTO public.clientes (nome, email) VALUES ('E5 Drop', 'e5@example.com');
+INSERT 0 1
+
+## E6 RENAME COLUMN
+
+-- source
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGSERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL; DROP PUBLICATION IF EXISTS cdc_publication; CREATE PUBLICATION cdc_publication FOR TABLE public.clientes;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+DROP PUBLICATION
+CREATE PUBLICATION
+
+-- target
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGINT PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+
+-- source
+ALTER TABLE public.clientes RENAME COLUMN nome TO nome_completo;
+ALTER TABLE
+
+-- source
+INSERT INTO public.clientes (nome_completo, email) VALUES ('E6 Rename', 'e6@example.com');
+INSERT 0 1
+
+## E7 ALTER TYPE
+
+-- source
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGSERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL; DROP PUBLICATION IF EXISTS cdc_publication; CREATE PUBLICATION cdc_publication FOR TABLE public.clientes;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+DROP PUBLICATION
+CREATE PUBLICATION
+
+-- target
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGINT PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+
+-- source
+ALTER TABLE public.clientes ALTER COLUMN nome TYPE VARCHAR(200);
+ALTER TABLE
+
+-- source
+INSERT INTO public.clientes (nome, email) VALUES ('E7 Alter Type', 'e7@example.com');
+INSERT 0 1
+
+## E8 SET NOT NULL
+
+-- source
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGSERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL; DROP PUBLICATION IF EXISTS cdc_publication; CREATE PUBLICATION cdc_publication FOR TABLE public.clientes;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+DROP PUBLICATION
+CREATE PUBLICATION
+
+-- target
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGINT PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+
+-- source
+ALTER TABLE public.clientes ALTER COLUMN email SET NOT NULL;
+ALTER TABLE
+
+-- source
+INSERT INTO public.clientes (nome, email) VALUES ('E8 Not Null', 'e8@example.com');
+INSERT 0 1
+
+## E9 DEFAULT
+
+-- source
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGSERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL; DROP PUBLICATION IF EXISTS cdc_publication; CREATE PUBLICATION cdc_publication FOR TABLE public.clientes;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+DROP PUBLICATION
+CREATE PUBLICATION
+
+-- target
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGINT PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+
+-- source
+ALTER TABLE public.clientes ALTER COLUMN email SET DEFAULT '';
+ALTER TABLE
+
+-- source
+INSERT INTO public.clientes (nome) VALUES ('E9 Default');
+INSERT 0 1
+
+## E10 CREATE TABLE
+
+-- source
+CREATE TABLE public.audit_enderecos (id BIGSERIAL PRIMARY KEY, cliente_id BIGINT, cidade TEXT); ALTER TABLE public.audit_enderecos REPLICA IDENTITY FULL; ALTER PUBLICATION cdc_publication ADD TABLE public.audit_enderecos;
+CREATE TABLE
+ALTER TABLE
+ALTER PUBLICATION
+
+-- source
+INSERT INTO public.audit_enderecos (cliente_id, cidade) VALUES (1, 'Salvador');
+INSERT 0 1
+
+## E11 DROP TABLE
+
+-- source
+DROP TABLE public.audit_enderecos;
+DROP TABLE
+
+## E13 TWO FAST CHANGES
+
+-- source
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGSERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL; DROP PUBLICATION IF EXISTS cdc_publication; CREATE PUBLICATION cdc_publication FOR TABLE public.clientes;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+DROP PUBLICATION
+CREATE PUBLICATION
+
+-- target
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGINT PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+
+-- source
+ALTER TABLE public.clientes ADD COLUMN a TEXT; ALTER TABLE public.clientes ADD COLUMN b TEXT;
+ALTER TABLE
+ALTER TABLE
+
+-- source
+INSERT INTO public.clientes (nome, email, a, b) VALUES ('E13 Fast', 'e13@example.com', 'a', 'b');
+INSERT 0 1
+
+## E14 DDL + DDL + DML SAME TRANSACTION
+
+-- source
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGSERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL; DROP PUBLICATION IF EXISTS cdc_publication; CREATE PUBLICATION cdc_publication FOR TABLE public.clientes;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+DROP PUBLICATION
+CREATE PUBLICATION
+
+-- target
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGINT PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+
+-- source
+BEGIN; ALTER TABLE public.clientes ADD COLUMN a TEXT; ALTER TABLE public.clientes ADD COLUMN b TEXT; INSERT INTO public.clientes (nome, email, a, b) VALUES ('E14 Same TX', 'e14@example.com', 'a', 'b'); COMMIT;
+BEGIN
+ALTER TABLE
+ALTER TABLE
+INSERT 0 1
+COMMIT
+
+## E15 ROLLBACK DDL
+
+-- source
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGSERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL; DROP PUBLICATION IF EXISTS cdc_publication; CREATE PUBLICATION cdc_publication FOR TABLE public.clientes;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+DROP PUBLICATION
+CREATE PUBLICATION
+
+-- target
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGINT PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+
+-- source allow-error
+BEGIN; ALTER TABLE public.clientes ADD COLUMN teste TEXT; ROLLBACK;
+BEGIN
+ALTER TABLE
+ROLLBACK
+exit_status=0
+
+## CATALOG after rollback
+
+-- source
+SELECT attnum, attname, format_type(atttypid, atttypmod) AS type, attnotnull, atthasdef FROM pg_attribute WHERE attrelid = 'public.clientes'::regclass AND attnum > 0 AND NOT attisdropped ORDER BY attnum;
+ attnum | attname |  type  | attnotnull | atthasdef 
+--------+---------+--------+------------+-----------
+      1 | id      | bigint | t          | t
+      2 | nome    | text   | t          | f
+      3 | email   | text   | f          | f
+(3 rows)
+
+
+-- source
+INSERT INTO public.clientes (nome, email) VALUES ('E15 Rollback', 'e15@example.com');
+INSERT 0 1
+
+## E16 FAILED DDL
+
+-- source
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGSERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL; DROP PUBLICATION IF EXISTS cdc_publication; CREATE PUBLICATION cdc_publication FOR TABLE public.clientes;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+DROP PUBLICATION
+CREATE PUBLICATION
+
+-- target
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGINT PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+
+-- source
+INSERT INTO public.clientes (nome) VALUES ('E16 Null Email');
+INSERT 0 1
+
+-- source allow-error
+ALTER TABLE public.clientes ALTER COLUMN email SET NOT NULL;
+ERROR:  column "email" of relation "clientes" contains null values
+exit_status=1
+
+-- source
+INSERT INTO public.clientes (nome, email) VALUES ('E16 Failed', 'e16@example.com');
+INSERT 0 1
+
+## E17 REPEATED RELATION MESSAGE
+
+-- source
+INSERT INTO public.clientes (nome, email) VALUES ('E17 First', 'e17a@example.com');
+INSERT 0 1
+
+-- source
+INSERT INTO public.clientes (nome, email) VALUES ('E17 Second', 'e17b@example.com');
+INSERT 0 1
+
+## E19 RELATION AND UPDATE DELETE AFTER CHANGE
+
+-- source
+ALTER TABLE public.clientes ADD COLUMN telefone TEXT;
+ALTER TABLE
+
+-- source
+INSERT INTO public.clientes (nome, email, telefone) VALUES ('E19 Insert', 'e19@example.com', '111');
+INSERT 0 1
+
+-- source
+UPDATE public.clientes SET telefone = '222' WHERE email = 'e19@example.com';
+UPDATE 1
+
+-- source
+DELETE FROM public.clientes WHERE email = 'e19@example.com';
+DELETE 1
+
+## E20 POSTGRESQLSINK INCOMPATIBILITY
+
+-- source
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGSERIAL PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL; DROP PUBLICATION IF EXISTS cdc_publication; CREATE PUBLICATION cdc_publication FOR TABLE public.clientes;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+DROP PUBLICATION
+CREATE PUBLICATION
+
+-- target
+DROP TABLE IF EXISTS public.enderecos; DROP TABLE IF EXISTS public.clientes; CREATE TABLE public.clientes (id BIGINT PRIMARY KEY, nome TEXT NOT NULL, email TEXT); ALTER TABLE public.clientes REPLICA IDENTITY FULL;
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+ALTER TABLE
+
+-- source
+ALTER TABLE public.clientes ADD COLUMN telefone TEXT;
+ALTER TABLE
+
+-- source
+INSERT INTO public.clientes (nome, email, telefone) VALUES ('E20 Sink Fail', 'e20@example.com', '333');
+INSERT 0 1
+
+## E21 MANUAL SCHEMA APPLY
+
+-- target
+ALTER TABLE public.clientes ADD COLUMN telefone TEXT;
+ALTER TABLE
+
+-- source
+INSERT INTO public.clientes (nome, email, telefone) VALUES ('E21 Manual Apply', 'e21@example.com', '444');
+INSERT 0 1
+
+## AUDIT COMPLETE
+consumer_log=/Users/valdineyfranca/Documents/cdc/cdc-postgres/dist/schema-evolution-audit/consumer.log
+sql_log=/Users/valdineyfranca/Documents/cdc/cdc-postgres/dist/schema-evolution-audit/sql.log
